@@ -18,28 +18,39 @@ Turma: Vespertino
 
 ## 🎯 Objetivo
 
-Desenvolver uma aplicação modular em Python capaz de:
+O objetivo do desafio é assumir tecnicamente um sistema produzido com apoio de Inteligência Artificial, realizar sua auditoria, identificar problemas, corrigir defeitos, testar seu funcionamento e transformá-lo em um MVP local auditado, corrigido, testado e documentado.
 
-- Ler documentos PDF contendo registros de atendimentos
-- Extrair texto diretamente dos PDFs
-- Encaminhar páginas sem texto suficiente para OCR
-- Validar os registros extraídos
-- Normalizar campos como protocolo, categoria, data e tempo
-- Identificar registros duplicados
-- Registrar erros de processamento
-- Persistir documentos e atendimentos em SQLite utilizando SQLAlchemy
-- Gerar indicadores estatísticos utilizando Pandas e NumPy
-- Exportar dados processados em CSV e indicadores em JSON
-- Gerar gráficos estatísticos em PNG
-- Dividir os textos em chunks
-- Gerar embeddings locais utilizando sentence-transformers
-- Persistir os embeddings no ChromaDB
-- Realizar busca semântica
-- Recuperar fontes relevantes para uma pergunta
-- Utilizar RAG para gerar respostas fundamentadas
-- Disponibilizar uma API utilizando FastAPI
-- Disponibilizar uma interface de consulta utilizando Streamlit
-- Permitir execução sem OPENAI_API_KEY, utilizando o modo de recuperação local.
+A equipe deve verificar se o sistema realmente funciona antes de considerar qualquer parte da implementação como correta.
+
+---
+
+## 📌 Situação-problema
+
+Uma ferramenta de Inteligência Artificial produziu um sistema para processamento de documentos de atendimentos.
+
+A solução possui funcionalidades para:
+
+- processamento de documentos PDF;
+- extração direta de texto;
+- OCR;
+- validação dos registros;
+- normalização dos dados;
+- identificação de duplicidades;
+- persistência em banco de dados;
+- geração de indicadores;
+- geração de gráficos;
+- criação de embeddings;
+- indexação vetorial;
+- busca semântica;
+- RAG;
+- API;
+- interface Streamlit.
+
+O sistema recebido pode apresentar erros funcionais, problemas de integração, falhas de configuração e decisões inadequadas.
+
+A equipe assumiu a responsabilidade de analisar, executar, corrigir, testar e documentar a solução.
+
+---
 ## 👥 Divisão das responsabilidades
 ### 👨‍💻 Marcos Vinicius — Entrada de dados + PDF + OCR
 
