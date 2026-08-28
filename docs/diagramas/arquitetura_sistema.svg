@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1120" viewBox="0 0 900 1120">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333" />
+    </marker>
+    <style>
+      .box { fill: #ffffff; stroke: #1f2937; stroke-width: 2; rx: 12; }
+      .service { fill: #eef6ff; stroke: #1d4ed8; stroke-width: 3; rx: 12; }
+      .title { font: bold 24px sans-serif; fill: #111827; }
+      .txt { font: 18px sans-serif; fill: #111827; text-anchor: middle; dominant-baseline: middle; }
+      .small { font: 14px sans-serif; fill: #374151; text-anchor: middle; }
+      .arrow { stroke: #333; stroke-width: 2.2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="900" height="1120" fill="#f8fafc"/>
+  <text x="450" y="45" class="title" text-anchor="middle">Arquitetura — Desafio Final Python para IA</text>
+  <text x="450" y="72" class="small">Fluxo local de processamento, recuperação e consulta</text>
+
+  <rect class="box" x="250" y="100" width="400" height="65"/>
+  <text class="txt" x="450" y="133">PDFs oficiais</text>
+
+  <line class="arrow" x1="450" y1="165" x2="450" y2="205"/>
+  <rect class="box" x="250" y="205" width="400" height="65"/>
+  <text class="txt" x="450" y="238">PDF Processor / OCR</text>
+
+  <line class="arrow" x1="450" y1="270" x2="450" y2="310"/>
+  <rect class="box" x="250" y="310" width="400" height="65"/>
+  <text class="txt" x="450" y="343">Text Processor / Validation</text>
+
+  <line class="arrow" x1="450" y1="375" x2="450" y2="415"/>
+  <rect class="box" x="250" y="415" width="400" height="65"/>
+  <text class="txt" x="450" y="448">SQLite / SQLAlchemy</text>
+
+  <line class="arrow" x1="450" y1="480" x2="450" y2="520"/>
+  <rect class="box" x="250" y="520" width="400" height="65"/>
+  <text class="txt" x="450" y="553">Analytics + CSV / JSON / PNG</text>
+
+  <line class="arrow" x1="450" y1="585" x2="450" y2="625"/>
+  <rect class="box" x="250" y="625" width="400" height="65"/>
+  <text class="txt" x="450" y="658">Chunking + Embeddings</text>
+
+  <line class="arrow" x1="450" y1="690" x2="450" y2="730"/>
+  <rect class="box" x="250" y="730" width="400" height="65"/>
+  <text class="txt" x="450" y="763">ChromaDB + RAG</text>
+
+  <line class="arrow" x1="450" y1="795" x2="450" y2="835"/>
+  <rect class="service" x="250" y="835" width="400" height="70"/>
+  <text class="txt" x="450" y="862">FastAPI</text>
+  <text class="small" x="450" y="888">GET /health • POST /ask • /docs</text>
+
+  <line class="arrow" x1="450" y1="905" x2="450" y2="945"/>
+  <rect class="service" x="250" y="945" width="400" height="70"/>
+  <text class="txt" x="450" y="972">Streamlit + ui_client</text>
+  <text class="small" x="450" y="998">pergunta • resposta • fontes • erros</text>
+
+  <line class="arrow" x1="450" y1="1015" x2="450" y2="1055"/>
+  <rect class="service" x="250" y="1055" width="400" height="45"/>
+  <text class="txt" x="450" y="1078">Usuário / demonstração ponta a ponta</text>
+</svg>
