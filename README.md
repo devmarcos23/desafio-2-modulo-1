@@ -41,6 +41,18 @@ Desenvolver uma aplicação modular em Python capaz de:
 - Disponibilizar uma interface de consulta utilizando Streamlit
 - Permitir execução sem OPENAI_API_KEY, utilizando o modo de recuperação local.
 ## 👥 Divisão das responsabilidades
+### 👨‍💻 Marcos Vinicius — Entrada de dados + PDF + OCR
+
+Responsável pelas funcionalidades de aplicação e interface, conforme a divisão adotada pela equipe.
+
+Principais atividades:
+
+- API
+- endpoints
+- integração da aplicação
+- interface Streamlit
+- testes de integração
+- execução e validação da aplicação.
 ### 👨‍💻 Diego Assunção — Banco, Analytics, Embeddings e RAG
 
 Responsável principalmente pela camada de persistência, análise e recuperação semântica:
@@ -70,7 +82,7 @@ Também participou da integração dessas funcionalidades com o pipeline.
 - Integração com RAG
 - Testes da recuperação semântica
 - Correções de integração entre banco, pipeline e analytics.
-### 👨‍💻 Pedro Gomes
+### 👨‍💻 Pedro Gomes — API + Streamlit + Integração + Teste + Documentação
 
 Responsável pelas funcionalidades de processamento e tratamento dos documentos, conforme a divisão adotada pela equipe.
 
@@ -84,18 +96,7 @@ Principais atividades:
 - tratamento dos registros
 - identificação de dados inválidos
 - apoio na integração do pipeline.
-### 👨‍💻 Marcos Vinicius
 
-Responsável pelas funcionalidades de aplicação e interface, conforme a divisão adotada pela equipe.
-
-Principais atividades:
-
-- API
-- endpoints
-- integração da aplicação
-- interface Streamlit
-- testes de integração
-- execução e validação da aplicação.
 ## 📌 Requisitos Funcionais
 ### RF01 — Processamento dos documentos
 
