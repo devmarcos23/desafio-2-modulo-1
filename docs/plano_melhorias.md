@@ -1,12 +1,12 @@
 # Crítica e plano de melhorias
 
-As melhorias foram priorizadas conforme impacto, esforço e risco.
+A solução original tinha boa separação modular, mas vários componentes estavam corretos isoladamente e falhavam quando integrados. O caso mais importante foi o OCR: Tesseract/segmentação conseguiam encontrar 25 registros, mas a execução observada produzia somente 82 registros totais. Isso demonstra por que testes ponta a ponta são indispensáveis em código gerado por IA.
 
-| ID | Prioridade | Problema | Justificativa/benefício | Esforço | Risco | Estratégia | Status |
+| Melhoria | Problema | Justificativa | Benefício | Esforço | Risco | Prioridade | Estratégia / situação |
 |---|---|---|---|---|---|---|---|
-| MEL-001 | P1 | O modo local não mostrava o conteúdo recuperado na interface. | Sem chave da OpenAI, o usuário precisa visualizar os trechos que sustentam a recuperação. | Baixo | Baixo | Exibir `conteudo` de cada fonte no Streamlit. | Implementada |
-| MEL-002 | P2 | URL da API estava fixa no código. | A configuração por ambiente melhora reprodutibilidade e implantação local. | Baixo | Baixo | Usar `API_BASE_URL` com fallback local. | Implementada |
-| MEL-003 | P2 | Comunicação HTTP estava misturada à camada visual. | Separar responsabilidades facilita manutenção e testes. | Baixo | Baixo | Criar `src/ui_client.py`. | Implementada |
-| MEL-004 | P2 | Cobertura de testes da API/interface era pequena. | Maior cobertura reduz regressões no merge e na demonstração. | Médio | Baixo | Cobrir validação, sucesso, 503, cliente HTTP e integração local. | Implementada |
-| MEL-005 | P2 | O contrato de saída da API não estava explicitado. | Schemas tornam `/docs` mais claro e previsível. | Baixo | Baixo | Criar modelos Pydantic para health, consulta e fontes. | Implementada |
-| MEL-006 | P3 | `/health` verifica apenas disponibilidade HTTP e modo. | Uma verificação opcional mais profunda poderia detectar banco/índice indisponíveis antes de `/ask`. | Médio | Médio | Criar endpoint separado de readiness, sem tornar o health básico pesado. | Futuro |
+| Histórico idempotente de registros | Duplicados/invalidos podiam desaparecer dos outputs ou divergir do cadastro único | Indicadores precisam considerar todos os registros oficiais | Elimina perda de dados e mantém banco × CSV coerentes | Médio | Médio | P0 | **Implementada** com `RegistroProcessado` e reconstrução dos outputs |
+| Reprocessamento de documento parcial | Falha temporária de OCR podia deixar histórico incompleto | Dependências externas podem falhar | Recuperação automática na próxima execução | Médio | Baixo | P0 | **Implementada** com `Documento.concluido` |
+| Integração e cache de CEP | Cliente existia sem participação no pipeline | RF07 e indicador municipal | Enriquecimento de município/UF sem interromper lote | Baixo | Baixo | P1 | **Implementada** com cache e timeout |
+| Pré-processamento de imagem OCR | Alguns campos continuam com caracteres distorcidos | O registro é recuperado, mas pode ser classificado inválido | Maior qualidade em e-mail/data/categoria | Médio | Médio: correção excessiva pode inventar dados | P2 | **Futuro**: binarização/contraste/deskew e comparação de PSM, sempre preservando bruto |
+| Health check de dependências | `/health` confirma API viva, não índice/modelo | Facilita operação e diagnóstico | Identifica DB/Chroma não preparados antes de `/ask` | Baixo | Baixo | P3 | **Futuro**: endpoint de readiness separado de liveness |
+| Cache de modelo de embeddings no processo da API | Carregamento pode ser custoso conforme ambiente | API deve responder com menor latência | Reduz tempo de consultas repetidas | Médio | Baixo | P2 | **Parcial**: `EmbeddingService` usa cache; medir e, se necessário, inicializar em lifespan da API |

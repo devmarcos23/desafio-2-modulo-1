@@ -8,6 +8,7 @@
 **Instituição:** SECITECI / Escola Técnica Estadual de Cuiabá  
 **Turma:** Vespertino  
 **Modalidade:** Equipe de 03 (três) discentes
+**Versão de entrega:** `v1.0.0`
 
 ---
 
@@ -23,37 +24,39 @@
 
 ## 🎯 Objetivo
 
-O objetivo do desafio é assumir tecnicamente um sistema produzido com apoio de Inteligência Artificial, realizar sua auditoria, identificar problemas, corrigir defeitos, testar seu funcionamento e transformar a solução em um MVP local auditado, corrigido, testado e documentado.
+Este projeto apresenta a versão **auditada, corrigida, testada e documentada** do sistema fornecido no Desafio 02.
 
-A equipe deve verificar se o sistema realmente funciona antes de considerar qualquer parte da implementação como correta.
+A aplicação processa documentos PDF de atendimentos, realiza extração direta ou OCR, valida e normaliza os registros, mantém o histórico em SQLite, produz indicadores e gráficos, gera chunks e embeddings, persiste a indexação vetorial no ChromaDB e disponibiliza consulta semântica/RAG por linha de comando, FastAPI e Streamlit.
+
+A versão final foi validada com os quatro PDFs oficiais, totalizando **4 documentos, 27 páginas e 100 registros extraídos**, sendo **25 registros provenientes das 7 páginas processadas por OCR**. A reexecução do pipeline preserva os mesmos resultados e mantém os arquivos de saída consistentes com o histórico persistido.
 
 ---
 
 ## 📌 Situação-problema
 
-Uma ferramenta de Inteligência Artificial produziu um sistema para processamento de documentos de atendimentos.
+O sistema original foi produzido com apoio de Inteligência Artificial e entregue como uma solução aparentemente completa, porém sem validação integral.
 
-A solução possui funcionalidades para:
+Durante a auditoria foram avaliados:
 
-- processamento de documentos PDF;
-- extração direta de texto;
+- processamento de PDFs digitais e digitalizados;
 - OCR;
-- validação dos registros;
+- extração e validação dos registros;
 - normalização dos dados;
 - identificação de duplicidades;
-- persistência em banco de dados;
-- geração de indicadores;
-- geração de gráficos;
-- criação de embeddings;
-- indexação vetorial;
-- busca semântica;
+- persistência com SQLite e SQLAlchemy;
+- consulta de CEP;
+- indicadores e visualizações;
+- processamento de linguagem natural;
+- chunking e metadados;
+- embeddings e busca semântica;
+- ChromaDB;
 - RAG;
-- API;
-- interface Streamlit.
+- FastAPI;
+- Streamlit;
+- testes automatizados;
+- documentação e reprodutibilidade da aplicação.
 
-O sistema recebido pode apresentar erros funcionais, problemas de integração, falhas de configuração e decisões inadequadas.
-
-A equipe assumiu a responsabilidade de analisar, executar, corrigir, testar e documentar a solução.
+Os defeitos encontrados foram registrados, priorizados e tratados de acordo com o impacto no funcionamento do MVP.
 
 ---
 
@@ -61,17 +64,19 @@ A equipe assumiu a responsabilidade de analisar, executar, corrigir, testar e do
 
 ## 👨‍💻 Marcos Vinicius — Entrada de dados, PDF, OCR e validação
 
-Responsável pelas funcionalidades relacionadas ao processamento inicial dos documentos e extração dos dados.
+Responsável principalmente pelas funcionalidades relacionadas ao processamento inicial dos documentos e à extração dos dados.
 
 ### Principais atividades
 
 - processamento dos PDFs;
-- extração de texto;
-- OCR;
+- extração direta de texto;
+- OCR com Tesseract;
+- integração com Poppler/pdf2image;
+- segmentação dos atendimentos;
 - validação dos registros;
-- normalização;
-- tratamento dos registros;
-- identificação de dados inválidos;
+- normalização dos campos;
+- tratamento das distorções provenientes do OCR;
+- identificação de dados inválidos e incompletos;
 - identificação de duplicidades;
 - apoio na integração do pipeline.
 
@@ -88,93 +93,420 @@ Responsável principalmente pelas funcionalidades relacionadas à persistência,
 - `src/analytics.py`
 - `src/embeddings.py`
 - `src/vector_store.py`
-- `src/rag.py`
 - `src/indexer.py`
+- `src/rag.py`
 
 ### Principais atividades
 
 - modelagem do banco SQLite;
-- persistência dos documentos;
-- persistência dos atendimentos;
+- persistência dos documentos e atendimentos;
 - controle de unicidade dos protocolos;
 - persistência dos chunks;
 - registro de erros de processamento;
-- criação dos indicadores;
-- exportação de dados para CSV;
-- exportação dos indicadores para JSON;
+- cálculo dos indicadores;
+- exportação de dados em CSV e JSON;
 - geração dos gráficos;
 - geração e validação dos embeddings;
-- indexação dos chunks no ChromaDB;
-- busca semântica;
+- indexação persistente no ChromaDB;
+- busca por similaridade;
+- recuperação de contexto;
 - integração com RAG;
-- testes da recuperação semântica;
-- correções de integração entre banco, pipeline e analytics;
-- validação da execução dos módulos relacionados ao banco, analytics, embeddings, ChromaDB e RAG.
+- modo de recuperação local sem OpenAI;
+- testes dos componentes de banco e recuperação semântica.
 
 ---
 
 ## 👨‍💻 Pedro Gomes — API, Streamlit, integração, testes e documentação
 
-Responsável pelas funcionalidades relacionadas à disponibilização da aplicação, integração dos componentes, testes e documentação.
+Responsável pelas funcionalidades relacionadas à disponibilização da aplicação, integração dos componentes, testes e documentação técnica.
 
 ### Principais atividades
 
-- API FastAPI;
-- endpoints da aplicação;
-- integração dos componentes;
+- API com FastAPI;
+- endpoints `GET /health` e `POST /ask`;
+- validação das entradas e respostas HTTP;
 - interface Streamlit;
-- testes de integração;
-- execução da aplicação;
-- validação da API;
-- validação da interface;
-- documentação técnica.
+- cliente HTTP da interface;
+- integração entre pipeline, banco, ChromaDB, RAG, API e interface;
+- testes da API e testes de integração;
+- validação ponta a ponta;
+- tratamento de erros de conexão;
+- documentação de instalação e execução;
+- documentação técnica e apoio visual da entrega.
 
 ---
 
-# 📋 Requisitos Funcionais
+# 🏗️ Arquitetura
 
-## RF01 — Processamento dos documentos
+O detalhamento da arquitetura está disponível em [`docs/arquitetura.md`](docs/arquitetura.md).
 
-O sistema deverá processar os documentos PDF disponíveis no diretório configurado.
+Fluxo principal:
 
-## RF02 — Extração de texto
+```text
+PDF
+ ↓
+Extração direta / OCR
+ ↓
+Segmentação dos atendimentos
+ ↓
+Validação e normalização
+ ↓
+SQLite / SQLAlchemy
+ ↓
+Indicadores + Chunks
+ ↓
+Embeddings
+ ↓
+ChromaDB
+ ↓
+RAG
+ ↓
+FastAPI
+ ↓
+Streamlit
+```
 
-O sistema deverá realizar a extração direta do texto dos documentos utilizando `pypdf`.
+---
 
-Páginas sem quantidade suficiente de texto deverão ser encaminhadas para OCR.
+# 📁 Estrutura do projeto
 
-## RF03 — Validação dos registros
+```text
+desafio-2-modulo-1/
+├── README.md
+├── requirements.txt
+├── .env.example
+├── .gitignore
+├── config.json
+├── pytest.ini
+├── data/
+│   ├── auxiliares/
+│   │   ├── categorias.json
+│   │   └── config_original.json
+│   └── pdfs/
+│       ├── atendimentos_digitais.pdf
+│       ├── atendimentos_digitalizados.pdf
+│       ├── atendimentos_duplicados.pdf
+│       └── atendimentos_incompletos.pdf
+├── database/
+│   └── atendimentos.db
+├── output/
+│   ├── atendimentos_processados.csv
+│   ├── indicadores.json
+│   ├── processamento.log
+│   └── graficos/
+├── docs/
+│   ├── arquitetura.md
+│   ├── diagnostico_inicial.md
+│   ├── catalogo_defeitos.md
+│   ├── matriz_testes.md
+│   ├── plano_melhorias.md
+│   └── apoio_visual_pitch.md
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
+│   ├── database.py
+│   ├── models.py
+│   ├── pdf_processor.py
+│   ├── ocr_processor.py
+│   ├── text_processor.py
+│   ├── validation.py
+│   ├── cep_client.py
+│   ├── analytics.py
+│   ├── embeddings.py
+│   ├── vector_store.py
+│   ├── indexer.py
+│   ├── rag.py
+│   ├── api.py
+│   ├── ui_client.py
+│   └── app_streamlit.py
+└── tests/
+```
 
-O sistema deverá validar os registros extraídos, classificando-os de acordo com sua qualidade e registrando os motivos das inconsistências.
+---
 
-## RF04 — Tratamento e normalização
+# 🛠️ Tecnologias utilizadas
 
-O sistema deverá realizar:
+- Python;
+- pypdf;
+- pdf2image;
+- Poppler;
+- Tesseract OCR;
+- Regex;
+- NLTK;
+- Requests;
+- SQLite;
+- SQLAlchemy;
+- Pandas;
+- NumPy;
+- Matplotlib;
+- sentence-transformers;
+- ChromaDB;
+- LangChain;
+- OpenAI;
+- FastAPI;
+- Uvicorn;
+- Streamlit;
+- Pytest;
+- Git / GitHub.
 
-- limpeza textual;
-- normalização dos campos;
-- padronização das categorias;
-- conversão de datas;
-- tratamento de tempos;
-- identificação de valores inválidos;
-- identificação de duplicidades.
+---
 
-## RF05 — Persistência em banco de dados
+# ⚙️ Pré-requisitos
 
-O sistema deverá armazenar os documentos processados em banco SQLite utilizando SQLAlchemy.
+- Python **3.11+**;
+- Tesseract OCR com o idioma `por` instalado;
+- Poppler com `pdftoppm` e `pdfinfo` disponíveis;
+- acesso à internet quando necessário para ViaCEP, download inicial do modelo de embeddings ou OpenAI.
 
-Deverão ser armazenados dados como:
+## Windows
 
-- nome do documento;
-- hash SHA-256;
-- quantidade de páginas;
-- método de processamento;
-- quantidade de páginas OCR;
-- data de processamento.
+Instalação com `winget`:
 
-## RF06 — Persistência dos atendimentos
+```powershell
+winget install --id tesseract-ocr.tesseract -e
+winget install --id oschwartz10612.Poppler -e
+```
 
-O sistema deverá armazenar os atendimentos extraídos contendo:
+Validação:
+
+```powershell
+tesseract --version
+tesseract --list-langs
+pdftoppm -h
+```
+
+O resultado de `tesseract --list-langs` deve incluir:
+
+```text
+por
+```
+
+Caso os executáveis estejam instalados mas não sejam reconhecidos pelo terminal, as respectivas pastas devem estar disponíveis no `PATH` do sistema.
+
+## Linux — Debian/Ubuntu
+
+```bash
+sudo apt update
+sudo apt install tesseract-ocr tesseract-ocr-por poppler-utils
+```
+
+---
+
+# 📦 Ambiente virtual e dependências
+
+## Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## Linux/macOS
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+---
+
+# 🔐 Variáveis de ambiente
+
+Crie o arquivo `.env` com base em `.env.example`:
+
+```text
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
+APP_ENV=development
+API_BASE_URL=http://127.0.0.1:8000
+```
+
+A chave `OPENAI_API_KEY` é opcional. Sem ela, a aplicação permanece funcional no modo `recuperacao_local`, apresentando os chunks e as fontes recuperadas.
+
+O arquivo `.env` é ignorado pelo Git e nenhuma chave de API é armazenada diretamente no código-fonte.
+
+---
+
+# ▶️ Execução
+
+## Pipeline — reconstrução completa
+
+```powershell
+python -m src.main --reset
+```
+
+## Pipeline — execução normal
+
+```powershell
+python -m src.main
+```
+
+O diretório do banco SQLite é criado automaticamente quando necessário.
+
+## Pipeline com indexação vetorial
+
+```powershell
+python -m src.main --indexar
+```
+
+Na primeira indexação, o `sentence-transformers` pode baixar o modelo definido em `config.json`.
+
+## Consulta pela linha de comando
+
+```powershell
+python -m src.main --pergunta "Quais atendimentos apresentam problema com senha?"
+```
+
+## FastAPI
+
+```powershell
+python -m uvicorn src.api:app --reload
+```
+
+Endpoints:
+
+- Health: `GET http://127.0.0.1:8000/health`
+- Swagger: `http://127.0.0.1:8000/docs`
+- Consulta: `POST http://127.0.0.1:8000/ask`
+
+Exemplo de requisição:
+
+```json
+{
+  "pergunta": "Quais atendimentos apresentam problema com senha?",
+  "top_k": 5,
+  "categoria": "Acesso e senha"
+}
+```
+
+Os filtros `categoria` e `protocolo` são opcionais.
+
+## Streamlit
+
+Com a FastAPI em execução em outro terminal:
+
+```powershell
+streamlit run src/app_streamlit.py
+```
+
+A interface apresenta:
+
+- pergunta em linguagem natural;
+- resposta do sistema;
+- protocolo;
+- documento de origem;
+- página;
+- categoria;
+- pontuação de similaridade;
+- conteúdo dos trechos utilizados como fonte.
+
+---
+
+# 🧪 Testes e validações
+
+Execução da suíte:
+
+```powershell
+python -m pytest -q
+```
+
+Resultado da versão de entrega:
+
+### Testes automatizados
+
+A versão final foi validada com a suíte completa de testes:
+
+```text
+30 passed in 34.39s
+```
+
+A suíte inclui testes para:
+
+- configuração;
+- validação e normalização;
+- SQLite e SQLAlchemy;
+- analytics;
+- cliente de CEP;
+- API;
+- cliente da interface;
+- indexação;
+- RAG;
+- integração do pipeline com os PDFs oficiais.
+
+Com Tesseract e Poppler instalados, o teste de integração confirma:
+
+```text
+4 documentos
+27 páginas
+7 páginas OCR
+25 registros OCR
+100 registros extraídos
+10 duplicados
+```
+
+A reexecução também é testada para garantir a manutenção dos resultados e a ausência de perda do histórico.
+
+A matriz detalhada está em [`docs/matriz_testes.md`](docs/matriz_testes.md).
+
+---
+
+# 📋 Requisitos funcionais — RF01 a RF17
+
+| Requisito | Implementação da versão final |
+|---|---|
+| **RF01 — Inicialização e configuração** | CLI por `python -m src.main`, ambiente virtual, `requirements.txt`, `config.json`, `.env.example` e segredos fora do Git |
+| **RF02 — Detecção e extração de PDFs** | Detecção com `pathlib`, extração por `pypdf`, decisão de extração por página e registro do método utilizado |
+| **RF03 — OCR** | Rasterização com Poppler/pdf2image, OCR com Tesseract, texto bruto e limpo, tratamento e registro de falhas |
+| **RF04 — Extração, validação e classificação** | Regex, validação de protocolo/data/e-mail/CEP/tempo, normalização e classificação em válido, incompleto, inválido ou duplicado |
+| **RF05 — Processamento de linguagem natural** | Normalização, tokenização, remoção de stopwords e stemming em português como processo equivalente à lematização |
+| **RF06 — Persistência com SQLite e SQLAlchemy** | Modelos, sessões, transações, CRUD controlado, unicidade de protocolo e recriação/reuso previsível do banco |
+| **RF07 — Consumo de API HTTP** | Integração ViaCEP com `requests`, timeout, tratamento de códigos HTTP e continuidade em falhas de rede |
+| **RF08 — Análise de dados** | Pandas + NumPy, agregações e todos os indicadores obrigatórios |
+| **RF09 — Visualização e exportação** | CSV, JSON, log e gráficos PNG com títulos, eixos e dimensões adequadas |
+| **RF10 — Chunking e metadados** | Tamanho e sobreposição configuráveis, IDs únicos e metadados de documento, página, protocolo e categoria |
+| **RF11 — Embeddings e busca semântica** | `sentence-transformers`, similaridade de cosseno e retorno top-k com fontes e pontuações |
+| **RF12 — ChromaDB** | Coleção persistente, sincronização sem duplicidade e filtros por categoria e protocolo |
+| **RF13 — RAG** | Recuperação de chunks, contexto limitado, resposta baseada nas fontes e indicação de insuficiência documental |
+| **RF14 — OpenAI API e LangChain** | Chave por variável de ambiente, cadeia de resposta, tratamento de falha e modo local sem chamada ao modelo |
+| **RF15 — FastAPI** | `GET /health`, `POST /ask`, validação, códigos HTTP adequados e documentação `/docs` |
+| **RF16 — Streamlit** | Campo de pergunta, consumo de `/ask`, resposta, fontes e tratamento compreensível de erros de conexão |
+| **RF17 — Controle de versão com Git** | `.gitignore`, commits organizados, branches de desenvolvimento, integração da versão final e versão de entrega `v1.0.0` |
+
+---
+
+# 🔒 Requisitos não funcionais
+
+A versão final atende aos requisitos não funcionais do desafio por meio das seguintes decisões:
+
+- arquitetura organizada em módulos com responsabilidades definidas;
+- type hints e docstrings em funções relevantes;
+- erros de registros ou páginas isolados sem interromper todo o pipeline;
+- mensagens e logs úteis para diagnóstico;
+- arquivos textuais gerados em UTF-8;
+- código organizado conforme convenções Python/PEP 8;
+- ausência de segredos no código e no repositório;
+- ausência de caminhos absolutos dependentes do computador dos integrantes;
+- banco e índice vetorial reproduzíveis;
+- README com instruções completas para reprodução da aplicação em outro ambiente.
+
+---
+
+# 🧩 Decisões de processamento
+
+## Extração e OCR
+
+Páginas com texto selecionável suficiente são processadas diretamente com `pypdf`. Páginas sem texto suficiente são convertidas em imagem por `pdf2image`/Poppler e submetidas ao Tesseract.
+
+O texto bruto do OCR é preservado, enquanto uma versão normalizada é utilizada para extração e recuperação.
+
+## Validação e normalização
+
+São tratados e validados:
 
 - protocolo;
 - data;
@@ -182,66 +514,135 @@ O sistema deverá armazenar os atendimentos extraídos contendo:
 - e-mail;
 - categoria;
 - descrição;
-- solução;
 - tempo;
 - status;
-- CEP;
-- município;
-- UF;
-- classificação;
-- motivos;
-- texto original;
-- texto limpo.
+- CEP.
 
-## RF07 — Controle de duplicidade
+Marcadores como `[vazio]` são tratados como ausência. Pequenas distorções do OCR em protocolos são normalizadas sem substituir o texto original.
 
-O sistema deverá identificar protocolos duplicados.
+Classificações possíveis:
 
-Registros repetidos pelo protocolo deverão ser classificados como duplicados e não deverão ser reinseridos como novos atendimentos.
+```text
+valido
+incompleto
+invalido
+duplicado
+```
 
-## RF08 — Registro de erros
+Os motivos de classificação permanecem disponíveis no banco, no CSV e nos registros de processamento.
 
-O sistema deverá registrar erros encontrados durante o processamento.
+## Deduplicação
 
-Os erros deverão conter informações como:
+`Atendimento.protocolo` possui unicidade. Protocolos repetidos são classificados como `duplicado` e não geram um novo atendimento persistido.
 
+O histórico de extração mantém os registros duplicados para que os indicadores representem corretamente os **100 registros oficiais**.
+
+Registros sem protocolo válido recebem identificadores técnicos internos na persistência, evitando falso reconhecimento de duplicidade entre registros diferentes.
+
+## CEP
+
+CEPs válidos podem ser enriquecidos pelo ViaCEP. A chamada utiliza timeout e tratamento de falhas. Se a API estiver indisponível, o pipeline continua normalmente.
+
+## NLP
+
+O texto utilizado na recuperação passa por:
+
+```text
+normalização
+→ tokenização
+→ remoção de stopwords
+→ stemming em português
+```
+
+O texto original permanece preservado.
+
+## Chunking
+
+Parâmetros configurados em `config.json`:
+
+- **Tamanho:** 500 caracteres;
+- **Sobreposição:** 80 caracteres.
+
+Cada chunk mantém em seus metadados:
+
+- protocolo;
 - documento;
 - página;
-- etapa;
-- tipo do erro;
-- mensagem;
-- data/hora.
+- categoria.
 
-## RF09 — Geração de indicadores
+## Embeddings e ChromaDB
 
-O sistema deverá calcular indicadores utilizando Pandas e NumPy.
+Modelo utilizado:
 
-Entre os indicadores estão:
+```text
+sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+```
 
-- total de documentos;
-- total de páginas;
-- total de registros;
-- registros por classificação;
-- percentual por classificação;
-- registros por categoria;
-- registros por status;
-- registros por município;
-- registros por método de extração;
-- tempo médio;
-- tempo mediano;
-- desvio padrão;
-- categoria com maior volume;
-- categoria com maior tempo médio;
-- tempo médio por categoria;
-- percentual de páginas processadas por OCR;
-- erros por tipo;
-- erros por etapa.
+Os vetores são normalizados e a recuperação utiliza similaridade de cosseno. A coleção do ChromaDB é persistente e evita indexações duplicadas.
 
-## RF10 — Exportação dos resultados
+São suportados filtros por:
 
-O sistema deverá gerar arquivos de saída contendo os dados processados e os indicadores.
+- categoria;
+- protocolo.
 
-### Exemplo
+## RAG e recuperação local
+
+Com `OPENAI_API_KEY` configurada, o LangChain utiliza os trechos recuperados para produzir uma resposta fundamentada no contexto.
+
+Sem a chave, o sistema utiliza o modo:
+
+```text
+recuperacao_local
+```
+
+Nesse modo, os chunks semanticamente mais relevantes e suas fontes continuam sendo apresentados ao usuário.
+
+Quando os documentos não sustentam uma resposta, a aplicação informa que não há informação suficiente.
+
+---
+
+# 📊 Resultados com os dados oficiais
+
+A validação final utilizou os quatro PDFs disponibilizados no desafio.
+
+| Indicador | Resultado |
+|---|---:|
+| Documentos processados | **4** |
+| Páginas processadas | **27** |
+| Páginas processadas por OCR | **7** |
+| Registros extraídos | **100** |
+| Registros provenientes do OCR | **25** |
+| Atendimentos únicos persistidos | **90** |
+| Duplicados | **10** |
+| Chunks persistidos no SQLite | **90** |
+| Registros válidos | **53** |
+| Registros inválidos | **32** |
+| Registros incompletos | **5** |
+| Percentual de páginas processadas por OCR | **25,93%** |
+
+Distribuição do PDF digitalizado:
+
+```text
+Página 1: 4 registros
+Página 2: 4 registros
+Página 3: 4 registros
+Página 4: 4 registros
+Página 5: 4 registros
+Página 6: 4 registros
+Página 7: 1 registro
+----------------------
+Total:   25 registros
+```
+
+As distorções naturais do OCR podem tornar campos específicos inválidos mesmo quando o atendimento foi recuperado corretamente. Esses registros não são descartados: permanecem armazenados com a respectiva classificação e os motivos identificados.
+
+Para manter a medição principal reproduzível e independente de disponibilidade externa, o enriquecimento de município/UF pelo ViaCEP é tratado separadamente. A integração HTTP é coberta por testes e falhas do serviço não interrompem o pipeline.
+
+---
+
+# 📈 Arquivos de saída
+
+O processamento gera:
 
 ```text
 output/
@@ -251,557 +652,80 @@ output/
 └── graficos/
 ```
 
-## RF11 — Geração de gráficos
+Entre os indicadores produzidos estão:
 
-O sistema deverá gerar gráficos estatísticos em formato PNG.
+- total de documentos e páginas;
+- quantidade e percentual por classificação;
+- quantidade por categoria;
+- quantidade por status;
+- quantidade por município/UF;
+- quantidade por método de extração;
+- média, mediana e desvio-padrão do tempo;
+- categoria com maior volume;
+- categoria com maior tempo médio;
+- percentual de páginas processadas por OCR;
+- erros por tipo;
+- erros por etapa.
 
-Entre os gráficos implementados estão:
+Os gráficos incluem, entre outros:
 
 - atendimentos por categoria;
-- atendimentos por status;
 - tempo médio por categoria;
+- atendimentos por status;
+- registros por classificação;
 - atendimentos por método de extração;
-- atendimentos por município;
-- registros por classificação.
+- atendimentos por município, quando houver enriquecimento disponível.
 
 ---
 
-# 🧠 Embeddings e Busca Semântica
+# 📝 Documentação técnica e auditoria
 
-## RF12 — Geração de embeddings
+Os documentos de apoio da versão final estão em `docs/`:
 
-O sistema deverá gerar embeddings locais dos chunks utilizando `sentence-transformers`.
-
-## RF13 — Criação dos chunks
-
-O sistema deverá dividir os textos dos atendimentos em chunks configuráveis.
-
-A configuração utilizada como referência é:
-
-- **Tamanho do chunk:** 500 caracteres;
-- **Sobreposição:** 80 caracteres.
-
-## RF14 — Persistência no ChromaDB
-
-O sistema deverá armazenar os embeddings em uma coleção persistente do ChromaDB.
-
-Os chunks deverão possuir metadados rastreáveis, incluindo:
-
-- protocolo;
-- documento;
-- página;
-- categoria.
-
-## RF15 — Busca semântica
-
-O sistema deverá receber uma pergunta em linguagem natural, gerar seu embedding e recuperar os chunks semanticamente mais semelhantes.
-
-### Exemplo validado
-
-**Pergunta:**
-
-> Qual atendimento apresenta problema com o depurador?
-
-**Resultado principal:**
-
-- **Protocolo:** AT-032
-- **Categoria:** VSCode e ferramentas
-- **Página:** 8
-- **Similaridade:** 0.4471
+- [`docs/arquitetura.md`](docs/arquitetura.md) — arquitetura e fluxo da aplicação;
+- [`docs/diagnostico_inicial.md`](docs/diagnostico_inicial.md) — estado encontrado antes das correções;
+- [`docs/catalogo_defeitos.md`](docs/catalogo_defeitos.md) — defeitos, causas, prioridades e correções;
+- [`docs/matriz_testes.md`](docs/matriz_testes.md) — estratégia e resultados dos testes;
+- [`docs/plano_melhorias.md`](docs/plano_melhorias.md) — crítica técnica e melhorias priorizadas;
+- [`docs/apoio_visual_pitch.md`](docs/apoio_visual_pitch.md) — apoio visual para apresentação técnica.
 
 ---
 
-# 🤖 RAG
+# ⚠️ Limitações conhecidas
 
-## RF16 — Recuperação de contexto
-
-O sistema deverá recuperar os trechos mais relevantes do ChromaDB para servir como contexto da resposta.
-
-### Fluxo
-
-```text
-Pergunta
-   ↓
-Embedding
-   ↓
-Busca semântica
-   ↓
-ChromaDB
-   ↓
-Chunks relevantes
-   ↓
-Contexto
-```
-
-## RF17 — Resposta fundamentada
-
-Quando a `OPENAI_API_KEY` estiver configurada, o sistema poderá utilizar um modelo de linguagem para produzir uma síntese baseada no contexto recuperado.
-
-## RF18 — Modo de recuperação local
-
-Quando não houver `OPENAI_API_KEY`, o sistema deverá continuar funcionando, apresentando os trechos mais semelhantes e suas respectivas fontes.
-
-**Modo utilizado nos testes:**
-
-```text
-recuperacao_local
-```
-
-## RF19 — Apresentação das fontes
-
-O sistema deverá informar as fontes utilizadas na recuperação, permitindo identificar:
-
-- protocolo;
-- documento;
-- página;
-- categoria;
-- similaridade.
+- O OCR pode produzir caracteres incorretos em campos específicos. O sistema prioriza registrar a inconsistência em vez de inferir ou inventar um valor.
+- Município e UF dependem do acesso ao ViaCEP. Em indisponibilidade de rede, o processamento continua sem enriquecimento.
+- O primeiro uso de `sentence-transformers` pode exigir download do modelo configurado.
+- `GET /health` verifica a disponibilidade da API. A disponibilidade prática do índice vetorial é validada durante a consulta em `POST /ask`.
 
 ---
 
-# 🔒 Requisitos Não Funcionais
+# 🔀 Controle de versão
 
-## RNF01 — Persistência
+O projeto utilizou branches separadas para o desenvolvimento e integração das funcionalidades.
 
-Os dados deverão permanecer armazenados no banco SQLite após o encerramento da aplicação.
-
-## RNF02 — Integridade
-
-O banco deverá garantir a integridade dos registros, incluindo a unicidade dos protocolos.
-
-## RNF03 — Rastreabilidade
-
-Os chunks utilizados nas consultas deverão manter informações que permitam identificar sua origem.
-
-## RNF04 — Reprodutibilidade
-
-O banco de dados e o índice vetorial deverão poder ser reproduzidos em outro ambiente seguindo as configurações e instruções do projeto.
-
-## RNF05 — Tolerância a falhas
-
-Falhas durante o OCR ou processamento de um documento não deverão interromper o processamento dos demais documentos.
-
-## RNF06 — Segurança
-
-As chaves de API não deverão ser armazenadas diretamente no código-fonte.
-
-As credenciais deverão ser configuradas por variáveis de ambiente.
-
-## RNF07 — Manutenibilidade
-
-O sistema deverá utilizar arquitetura modular, mantendo separadas as responsabilidades de:
-
-- Banco;
-- Analytics;
-- Embeddings;
-- Vector Store;
-- RAG;
-- API;
-- Interface.
-
-## RNF08 — Desempenho
-
-A busca semântica deverá utilizar embeddings e índice vetorial para recuperar os conteúdos relevantes de maneira eficiente.
-
-## RNF09 — Auditabilidade
-
-O sistema deverá registrar erros e produzir indicadores que permitam verificar o resultado do processamento.
-
-## RNF10 — Disponibilidade do modo local
-
-O sistema deverá permitir consultas mesmo sem configuração da API da OpenAI, utilizando o modo de recuperação local.
-
----
-
-# 🗄️ Banco de Dados
-
-A persistência é realizada utilizando:
-
-- SQLite;
-- SQLAlchemy.
-
-### Principais entidades
+### OCR e validação
 
 ```text
-Documento
-├── Atendimento
-└── Chunk
-
-ErroProcessamento
+feature/ocr-validation
 ```
 
-### Principais tabelas
-
-- `documentos`
-- `atendimentos`
-- `chunks`
-- `erros_processamento`
-
----
-
-# 📊 Resultado da validação do banco
-
-Durante os testes realizados na branch `feature/database-rag`, foram identificados:
-
-```text
-DOCUMENTOS:      4
-ATENDIMENTOS:   64
-CHUNKS:         64
-ERROS:          18
-```
-
-Os erros registrados foram:
-
-```text
-Duplicidade:              11
-PDFInfoNotInstalledError:  7
-```
-
----
-
-# 📈 Resultado dos indicadores
-
-Após a correção do pipeline, o sistema passou a reconstruir os indicadores utilizando os dados históricos do banco quando não existem novos documentos.
-
-### Resultado validado
-
-```text
-Documentos:     4
-Páginas:       27
-Registros:     64
-Páginas OCR:    0
-Erros:         18
-```
-
-### Principais indicadores
-
-```text
-Válidos:              51
-Inválidos:             13
-
-Tempo médio:       50,00 minutos
-Mediana:           47,50 minutos
-Desvio padrão:     23,18 minutos
-```
-
-### Categoria com maior volume
-
-```text
-Conectividade
-```
-
-### Categoria com maior tempo médio
-
-```text
-VSCode e ferramentas
-```
-
----
-
-# 🧠 Resultado da busca semântica
-
-### Pergunta utilizada
-
-> Qual atendimento apresenta problema com o depurador?
-
-### Resultado principal
-
-```text
-Protocolo:    AT-032
-Categoria:    VSCode e ferramentas
-Página:       8
-Similaridade: 0.4471
-```
-
-O teste confirmou:
-
-```text
-BUSCA OK
-```
-
----
-
-# 🤖 Resultado do RAG
-
-O sistema também foi validado sem `OPENAI_API_KEY`.
-
-### Resultado
-
-```text
-RAG OK
-MODO: recuperacao_local
-```
-
-O modo local recupera os trechos mais semelhantes e apresenta suas fontes, mantendo a aplicação funcional mesmo sem uma API externa.
-
----
-
-# 🧪 Testes e validações realizados
-
-Durante a auditoria e correção do projeto, foram realizados testes nos componentes de persistência, analytics, embeddings, indexação vetorial e RAG.
-
-## Banco e indicadores
-
-Foram validados:
-
-- persistência dos documentos;
-- persistência dos atendimentos;
-- persistência dos chunks;
-- registro dos erros;
-- unicidade dos protocolos;
-- tratamento de duplicidades;
-- reconstrução dos indicadores utilizando dados históricos quando não existem documentos novos.
-
-### Resultado validado
-
-```text
-4 documentos
-27 páginas
-64 registros
-18 erros registrados
-```
-
-Classificação:
-
-```text
-51 registros válidos
-13 registros inválidos
-```
-
-Indicadores de tempo:
-
-```text
-Tempo médio: 50,00 minutos
-Mediana:      47,50 minutos
-Desvio padrão: 23,18 minutos
-```
-
-## Embeddings
-
-Com o modelo:
-
-```text
-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-```
-
-foi validado:
-
-```text
-Dimensão do embedding: 384
-Norma do vetor normalizado: 1.0
-Geração do embedding: OK
-```
-
-Também foi validada a compilação e importação do módulo:
-
-```text
-EMBEDDINGS OK
-```
-
-## ChromaDB e indexação
-
-Foi validada a coleção persistente:
-
-```text
-atendimentos
-```
-
-Resultado:
-
-```text
-64 chunks indexados
-64 vetores persistidos no ChromaDB
-```
-
-Os metadados dos chunks são mantidos para rastreabilidade da fonte.
-
-A compilação e importação do módulo foram validadas:
-
-```text
-CHROMA STORE OK
-INDEXER OK
-```
-
-A indexação foi executada com sucesso pelo módulo `indexer.py`:
-
-```text
-CHUNKS INDEXADOS: 64
-VETORES NO CHROMADB: 64
-```
-
-## Busca semântica
-
-Foi validada a pergunta:
-
-> Qual atendimento apresenta problema com o depurador?
-
-Resultado principal:
-
-```text
-Protocolo:    AT-032
-Categoria:    VSCode e ferramentas
-Página:       8
-Similaridade: 0.4471
-```
-
-Total de resultados retornados:
-
-```text
-5
-```
-
-## RAG
-
-A compilação e importação do módulo RAG foram validadas:
-
-```text
-RAG OK
-```
-
-Também foi validado o modo:
-
-```text
-recuperacao_local
-```
-
-sem `OPENAI_API_KEY`.
-
-O sistema continua recuperando os trechos relevantes e apresentando as respectivas fontes sem depender da API externa.
-
----
-
-# 🛠️ Tecnologias Utilizadas
-
-- Python
-- SQLAlchemy
-- SQLite
-- Pandas
-- NumPy
-- Matplotlib
-- sentence-transformers
-- ChromaDB
-- LangChain
-- OpenAI
-- FastAPI
-- Streamlit
-- Pytest
-- pypdf
-- Tesseract
-- Regex
-- Git / GitHub
-
----
-
-# 📁 Estrutura do Projeto
-
-```text
-desafio-2-modulo-1/
-├── data/
-│   ├── auxiliares/
-│   └── atendimentos/
-├── database/
-│   ├── atendimentos.db
-│   └── chroma/
-├── output/
-│   ├── atendimentos_processados.csv
-│   ├── indicadores.json
-│   ├── processamento.log
-│   └── graficos/
-├── src/
-│   ├── main.py
-│   ├── api.py
-│   ├── app_streamlit.py
-│   ├── config.py
-│   ├── database.py
-│   ├── models.py
-│   ├── pipeline.py
-│   ├── analytics.py
-│   ├── embeddings.py
-│   ├── vector_store.py
-│   ├── indexer.py
-│   ├── rag.py
-│   ├── pdf_processor.py
-│   ├── ocr_processor.py
-│   ├── text_processor.py
-│   └── validation.py
-├── tests/
-├── .env.example
-├── .gitignore
-├── config.json
-├── requirements.txt
-└── README.md
-```
-
----
-
-# ▶️ Execução
-
-## Windows PowerShell
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-## Pipeline
-
-```powershell
-python -m src.main
-```
-
-## Pipeline com indexação vetorial
-
-```powershell
-python -m src.main --indexar
-```
-
-## Consulta semântica
-
-```powershell
-python -m src.main --pergunta "Qual atendimento apresenta problema com o depurador?"
-```
-
-## API
-
-```powershell
-python -m uvicorn src.api:app --reload
-```
-
-## Streamlit
-
-```powershell
-streamlit run src/app_streamlit.py
-```
-
-## Testes
-
-```powershell
-python -m pytest
-```
-
----
-
-# 🔀 Controle de Versão
-
-O projeto utiliza branches para desenvolvimento das funcionalidades.
-
-### Branch de banco, analytics, embeddings e RAG
+### Banco, analytics, embeddings e RAG
 
 ```text
 feature/database-rag
 ```
 
-### Branch da API e Streamlit
+### API e Streamlit
 
 ```text
 feature/api-streamlit
 ```
 
-### Branch de OCR e validação
+### Integração
 
 ```text
-feature/ocr-validation
+release
 ```
 
 ### Branch principal
@@ -810,100 +734,86 @@ feature/ocr-validation
 main
 ```
 
-As branches permanecem separadas durante o desenvolvimento e são integradas após a validação das funcionalidades.
+### Versão da entrega
+
+```text
+v1.0.0
+```
+
+O histórico de commits, branches, merges e tag é mantido no repositório Git. A pasta `.git` não faz parte do conteúdo do ZIP da aplicação.
 
 ---
 
 # 🤖 Uso de ferramentas de IA
 
-Durante o desenvolvimento foi utilizada a ferramenta ChatGPT como apoio ao processo de desenvolvimento e auditoria.
+Durante a auditoria e desenvolvimento foi utilizado **ChatGPT** como ferramenta de apoio.
 
 ## Finalidades
 
 A ferramenta foi utilizada para:
 
-- interpretar mensagens de erro;
-- auxiliar na compreensão de bibliotecas Python;
-- sugerir testes;
-- revisar código;
-- auxiliar na implementação do banco;
-- auxiliar na implementação dos indicadores;
-- auxiliar na implementação do pipeline;
-- auxiliar na implementação da busca semântica;
-- auxiliar na implementação do RAG;
-- auxiliar na documentação;
-- auxiliar na organização do Git e GitHub;
-- auxiliar na análise e correção de problemas.
+- interpretação dos requisitos do desafio;
+- análise de mensagens de erro e stack traces;
+- apoio à auditoria do código;
+- investigação de falhas no OCR e pipeline;
+- revisão de SQLite/SQLAlchemy;
+- revisão de FastAPI e Streamlit;
+- sugestões de testes de regressão;
+- análise dos requisitos funcionais e não funcionais;
+- revisão da documentação técnica.
 
-## Participação dos discentes
+## Solicitações relevantes
 
-As sugestões foram analisadas, executadas e validadas pelos integrantes do projeto.
+Entre as solicitações realizadas estiveram:
 
-Os discentes foram responsáveis por:
+- analisar os documentos oficiais e o projeto arquivo por arquivo;
+- investigar a diferença entre registros reconhecidos pelo OCR e registros mantidos pelo pipeline;
+- comparar a implementação com RF01–RF17;
+- revisar a integração dos componentes;
+- revisar o README e os documentos de entrega;
+- propor testes capazes de reproduzir e impedir regressões dos defeitos encontrados.
 
-- implementar e modificar o código;
-- executar os comandos;
-- analisar os resultados;
-- identificar erros;
-- corrigir problemas;
-- executar testes;
-- validar o funcionamento do sistema;
-- decidir quais sugestões seriam incorporadas;
-- organizar os arquivos;
-- realizar commits;
-- trabalhar com branches;
-- validar a execução final da aplicação.
+## Sugestões incorporadas após validação
+
+Entre as sugestões incorporadas após análise e teste estão:
+
+- criação automática do diretório do SQLite;
+- manutenção do histórico de todos os registros extraídos;
+- reprocessamento previsível de documentos;
+- preservação dos outputs em reexecuções;
+- integração tolerante a falhas do ViaCEP;
+- cálculo do percentual de OCR por página;
+- diferenciação correta entre protocolo ausente e protocolo duplicado;
+- filtro do ChromaDB por protocolo;
+- limite de contexto no RAG;
+- URL configurável para a API;
+- mensagens de erro compreensíveis na interface;
+- ampliação da suíte de testes.
+
+## Sugestões rejeitadas ou adaptadas
+
+Não foram aplicadas correções que inferissem valores ilegíveis sem evidência no documento original. Por exemplo, quando o OCR não permite determinar de maneira confiável uma categoria ou outro campo, o sistema registra a inconsistência em vez de criar uma informação artificial.
+
+As sugestões recebidas foram adaptadas às regras e aos dados oficiais antes de serem incorporadas ao código.
+
+## Revisão e validação
+
+As alterações incorporadas foram verificadas por leitura do código, execução dos módulos e testes automatizados. A versão final foi validada com os quatro PDFs oficiais e recuperou os **100 registros previstos**, além de passar pela suíte de **30 testes**.
 
 ---
 
 # 📦 Entregáveis
 
-De acordo com o desafio, o projeto deverá conter:
+A entrega do Desafio 02 é composta por:
 
 1. código corrigido e configurável;
 2. arquivos de saída gerados com os dados oficiais;
-3. banco e índice vetorial reproduzíveis;
+3. banco SQLite e índice vetorial reproduzíveis;
 4. documentação técnica da aplicação;
 5. catálogo de defeitos;
 6. crítica e plano de melhorias;
-7. slides ou apoio visual para o pitch;
-8. vídeo de 5 minutos do pitch.
-
----
-
-# 📤 Forma de entrega
-
-O projeto deverá ser compactado no formato `.zip`.
-
-O arquivo deverá ser encaminhado para:
-
-```text
-ficdev00@gmail.com
-```
-
-### Prazo
-
-```text
-30/08/2026 às 23h59
-```
-
-O arquivo deverá ser enviado por apenas um integrante da equipe.
-
-### Assunto do e-mail
-
-```text
-desafio02
-```
-
-### Corpo do e-mail
-
-O corpo da mensagem deverá conter os nomes de todos os integrantes:
-
-```text
-Diego Assunção
-Pedro Gomes
-Marcos Vinicius
-```
+7. apoio visual do pitch técnico;
+8. vídeo de aproximadamente 5 minutos com demonstração ponta a ponta.
 
 ---
 
@@ -913,5 +823,5 @@ Marcos Vinicius
 - **Pedro Gomes**
 - **Marcos Vinicius**
 
-**Turma:** Vespertino — FIC_DEV Módulo Python para IA  
+**Turma:** Vespertino — FIC_DEV | COD 001 — Introdução a Python para IA
 **Instituição:** SECITECI / Escola Técnica Estadual de Cuiabá
