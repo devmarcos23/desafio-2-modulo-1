@@ -57,7 +57,7 @@ _FIELD_ORDER = [
 _PROTOCOL_LABEL_RE = re.compile(
     (
         r"\bprotoc(?:olo|ol|ob|o)?\b"
-        r"(?=\s*(?:\||:)?\s*(?:AT\s*[-–—]?\s*[0-9OQ@IL]{3}|PROTOCOLO\?))"
+        r"(?=\s*(?:\||:)?\s*(?:AT\s*[-–—]?\s*[0-9OQ@IL®]{3}|PROTOCOLO\?))"
     ),
     re.I,
 )
@@ -143,12 +143,12 @@ def _normalize_protocol(value: str) -> str:
         return ""
 
     # O OCR pode trocar o zero por O/Q/@ e inserir espaços ao redor do hífen.
-    match = re.search(r"\bAT\s*[-–—]?\s*([0-9OQ@IL]{3})\b", value, re.I)
+    match = re.search(r"\bAT\s*[-–—]?\s*([0-9OQ@IL®]{3})\b", value, re.I)
     if not match:
         return value.strip()
 
     digits = match.group(1).upper().translate(
-        str.maketrans({"O": "0", "Q": "0", "@": "0", "I": "1", "L": "1"})
+        str.maketrans({"O": "0", "Q": "0", "@": "0", "I": "1", "L": "1", "®": "0"})
     )
     return f"AT-{digits}"
 

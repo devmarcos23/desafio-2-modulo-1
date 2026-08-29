@@ -126,3 +126,21 @@ def test_split_records_ignores_word_protocol_inside_observation():
         "Problema Erro Solucao Ok Observacoes Fim."
     )
     assert len(split_records(text)) == 2
+
+def test_protocolo_com_simbolo_registrado_gerado_pelo_ocr():
+    texto = """
+    Protocolo AT ®67 Data 2487/2026
+
+    Solicitante Thiago Araujo Campos
+    Email thiago.araujo@aluno.exemplo.br
+    Categoria extensao vscode
+    Status Pendente
+    """
+
+    registros = split_records(texto)
+
+    assert len(registros) == 1
+
+    campos = extract_fields(registros[0])
+
+    assert campos["protocolo"] == "AT-067"
