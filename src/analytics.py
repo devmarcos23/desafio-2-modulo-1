@@ -1,5 +1,4 @@
-"""Indicadores, exportações e gráficos."""
-
+"""Indicadores, exportações e gráficos estatísticos do processamento."""
 from __future__ import annotations
 
 import json
@@ -11,325 +10,91 @@ import pandas as pd
 
 
 def _series(df: pd.DataFrame, column: str) -> pd.Series:
-    """Retorna uma coluna ou uma Series vazia quando ela não existe."""
-
-    if column in df.columns:
-        return df[column]
-
-    return pd.Series(dtype="object")
+    return df[column] if column in df.columns else pd.Series(dtype="object")
 
 
-def _counts(df: pd.DataFrame, column: str) -> dict:
-    """Calcula a quantidade de registros por valor."""
-
+def _counts(df: pd.DataFrame, column: str) -> dict[str, int]:
     series = _series(df, column)
-
     if series.empty:
         return {}
-
-    series = series.fillna("Sem informação")
-
-    return {
-        str(key): int(value)
-        for key, value in series.value_counts(
-            dropna=False
-        ).items()
-    }
+    series = series.fillna("Sem informação").replace("", "Sem informação")
+    return {str(key): int(value) for key, value in series.value_counts(dropna=False).items()}
 
 
-def _percentages(df: pd.DataFrame, column: str) -> dict:
-    """Calcula o percentual de registros por valor."""
-
+def _percentages(df: pd.DataFrame, column: str) -> dict[str, float]:
     counts = _counts(df, column)
     total = len(df)
-
     if total == 0:
         return {}
-
-    return {
-        key: round((value / total) * 100, 2)
-        for key, value in counts.items()
-    }
+    return {key: round(value / total * 100, 2) for key, value in counts.items()}
 
 
 def _tempo_series(df: pd.DataFrame) -> pd.Series:
-    """Retorna os tempos válidos em minutos."""
-
     if "tempo_minutos" not in df.columns:
         return pd.Series(dtype=float)
-
-    return pd.to_numeric(
-        df["tempo_minutos"],
-        errors="coerce",
-    ).dropna()
+    return pd.to_numeric(df["tempo_minutos"], errors="coerce").dropna()
 
 
 def build_indicators(
     df: pd.DataFrame,
-    total_documentos: int | None = None,
-    total_paginas: int | None = None,
-    paginas_ocr: int | None = None,
+    *,
+    total_documentos: int,
+    total_paginas: int,
+    paginas_ocr: int,
     erros: pd.DataFrame | None = None,
 ) -> dict:
-    """Calcula os indicadores exigidos pelo projeto."""
-
+    """Calcula todos os indicadores obrigatórios do desafio."""
     times = _tempo_series(df)
+    categorias = _counts(df, "categoria")
+    tempos_categoria: dict[str, float] = {}
+    categoria_maior_tempo: str | None = None
 
-    classificacoes = _counts(
-        df,
-        "classificacao",
-    )
-
-    categorias = _counts(
-        df,
-        "categoria",
-    )
-
-    status = _counts(
-        df,
-        "status",
-    )
-
-    municipios = _counts(
-        df,
-        "municipio",
-    )
-
-    metodos = _counts(
-        df,
-        "metodo",
-    )
-
-    # ---------------------------------------------------------
-    # Total de documentos
-    # ---------------------------------------------------------
-
-    if total_documentos is None:
-
-        if "documento" in df.columns:
-            total_documentos = int(
-                df["documento"].nunique()
-            )
-        else:
-            total_documentos = 0
-
-    # ---------------------------------------------------------
-    # Total de páginas
-    # ---------------------------------------------------------
-
-    if total_paginas is None:
-
-        if {
-            "documento",
-            "pagina",
-        }.issubset(df.columns):
-
-            total_paginas = int(
-                df[
-                    [
-                        "documento",
-                        "pagina",
-                    ]
-                ]
-                .drop_duplicates()
-                .shape[0]
-            )
-
-        else:
-            total_paginas = 0
-
-    # ---------------------------------------------------------
-    # Categoria com maior volume
-    # ---------------------------------------------------------
-
-    categoria_maior_volume = None
-
-    if categorias:
-
-        categoria_maior_volume = max(
-            categorias,
-            key=categorias.get,
-        )
-
-    # ---------------------------------------------------------
-    # Tempo médio por categoria
-    # ---------------------------------------------------------
-
-    categoria_maior_tempo = None
-
-    tempos_categoria = {}
-
-    if {
-        "categoria",
-        "tempo_minutos",
-    }.issubset(df.columns):
-
+    if {"categoria", "tempo_minutos"}.issubset(df.columns):
         temp_df = df.copy()
-
-        temp_df["tempo_minutos"] = pd.to_numeric(
-            temp_df["tempo_minutos"],
-            errors="coerce",
+        temp_df["categoria"] = temp_df["categoria"].fillna("Sem informação").replace(
+            "", "Sem informação"
         )
-
-        tempos = (
-            temp_df
-            .dropna(
-                subset=["tempo_minutos"]
-            )
-            .groupby("categoria")[
-                "tempo_minutos"
-            ]
-            .mean()
-            .dropna()
-        )
-
+        temp_df["tempo_minutos"] = pd.to_numeric(temp_df["tempo_minutos"], errors="coerce")
+        grouped = temp_df.dropna(subset=["tempo_minutos"]).groupby("categoria")[
+            "tempo_minutos"
+        ].mean()
         tempos_categoria = {
-            str(key): round(
-                float(value),
-                2,
-            )
-            for key, value in tempos.items()
+            str(key): round(float(value), 2) for key, value in grouped.items()
         }
+        if not grouped.empty:
+            categoria_maior_tempo = str(grouped.idxmax())
 
-        if not tempos.empty:
-
-            categoria_maior_tempo = str(
-                tempos.idxmax()
-            )
-
-    # ---------------------------------------------------------
-    # Erros de processamento
-    # ---------------------------------------------------------
-
-    erros_por_tipo = {}
-    erros_por_etapa = {}
-
+    erros_por_tipo: dict[str, int] = {}
+    erros_por_etapa: dict[str, int] = {}
     if erros is not None and not erros.empty:
+        erros_por_tipo = _counts(erros, "tipo")
+        erros_por_etapa = _counts(erros, "etapa")
 
-        if "tipo" in erros.columns:
-
-            erros_por_tipo = _counts(
-                erros,
-                "tipo",
-            )
-
-        if "etapa" in erros.columns:
-
-            erros_por_etapa = _counts(
-                erros,
-                "etapa",
-            )
-
-    # ---------------------------------------------------------
-    # Percentual de páginas processadas por OCR
-    # ---------------------------------------------------------
-
-    percentual_paginas_ocr = 0.0
-
-    if (
-        paginas_ocr is not None
-        and total_paginas is not None
-        and total_paginas > 0
-    ):
-
-        percentual_paginas_ocr = round(
-            (
-                paginas_ocr
-                / total_paginas
-            )
-            * 100,
-            2,
-        )
-
-    # ---------------------------------------------------------
-    # Resultado
-    # ---------------------------------------------------------
+    categoria_maior_volume = max(categorias, key=categorias.get) if categorias else None
+    percentual_ocr = round((paginas_ocr / total_paginas * 100), 2) if total_paginas else 0.0
 
     return {
-        "total_documentos": int(
-            total_documentos
-        ),
-
-        "total_paginas": int(
-            total_paginas
-        ),
-
-        "total_registros": int(
-            len(df)
-        ),
-
-        "por_classificacao": classificacoes,
-
-        "percentual_por_classificacao": (
-            _percentages(
-                df,
-                "classificacao",
-            )
-        ),
-
+        "total_documentos": int(total_documentos),
+        "total_paginas": int(total_paginas),
+        "total_registros": int(len(df)),
+        "por_classificacao": _counts(df, "classificacao"),
+        "percentual_por_classificacao": _percentages(df, "classificacao"),
         "por_categoria": categorias,
-
-        "por_status": status,
-
-        "por_municipio": municipios,
-
-        "por_metodo_extracao": metodos,
-
-        "tempo_medio": (
-            round(
-                float(np.mean(times)),
-                2,
-            )
-            if not times.empty
-            else None
-        ),
-
-        "tempo_mediano": (
-            round(
-                float(np.median(times)),
-                2,
-            )
-            if not times.empty
-            else None
-        ),
-
+        "por_status": _counts(df, "status"),
+        "por_municipio": _counts(df, "municipio"),
+        "por_uf": _counts(df, "uf"),
+        "por_metodo_extracao": _counts(df, "metodo"),
+        "tempo_medio": round(float(np.mean(times)), 2) if not times.empty else None,
+        "tempo_mediano": round(float(np.median(times)), 2) if not times.empty else None,
         "tempo_desvio_padrao": (
-            round(
-                float(
-                    np.std(
-                        times,
-                        ddof=1,
-                    )
-                ),
-                2,
-            )
-            if len(times) > 1
-            else 0.0
+            round(float(np.std(times, ddof=1)), 2) if len(times) > 1 else 0.0
         ),
-
-        "categoria_maior_volume": (
-            categoria_maior_volume
-        ),
-
-        "categoria_maior_tempo_medio": (
-            categoria_maior_tempo
-        ),
-
-        "tempo_medio_por_categoria": (
-            tempos_categoria
-        ),
-
-        "percentual_paginas_ocr": (
-            percentual_paginas_ocr
-        ),
-
-        "erros_por_tipo": (
-            erros_por_tipo
-        ),
-
-        "erros_por_etapa": (
-            erros_por_etapa
-        ),
+        "categoria_maior_volume": categoria_maior_volume,
+        "categoria_maior_tempo_medio": categoria_maior_tempo,
+        "tempo_medio_por_categoria": tempos_categoria,
+        "percentual_paginas_ocr": percentual_ocr,
+        "erros_por_tipo": erros_por_tipo,
+        "erros_por_etapa": erros_por_etapa,
     }
 
 
@@ -338,20 +103,15 @@ def export_results(
     output_dir: str | Path,
     csv_name: str,
     json_name: str,
-    total_documentos: int | None = None,
-    total_paginas: int | None = None,
-    paginas_ocr: int | None = None,
+    *,
+    total_documentos: int,
+    total_paginas: int,
+    paginas_ocr: int,
     erros: pd.DataFrame | None = None,
 ) -> dict:
-    """Exporta os dados tratados e os indicadores."""
-
-    out = Path(output_dir)
-
-    out.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
+    """Exporta CSV tratado e JSON de indicadores em UTF-8."""
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
     indicators = build_indicators(
         df,
         total_documentos=total_documentos,
@@ -359,219 +119,95 @@ def export_results(
         paginas_ocr=paginas_ocr,
         erros=erros,
     )
-
-    # ---------------------------------------------------------
-    # CSV
-    # ---------------------------------------------------------
-
-    df.to_csv(
-        out / csv_name,
-        index=False,
+    df.to_csv(output / csv_name, index=False, encoding="utf-8")
+    (output / json_name).write_text(
+        json.dumps(indicators, ensure_ascii=False, indent=2, default=float),
         encoding="utf-8",
     )
-
-    # ---------------------------------------------------------
-    # JSON
-    # ---------------------------------------------------------
-
-    (out / json_name).write_text(
-        json.dumps(
-            indicators,
-            ensure_ascii=False,
-            indent=2,
-            default=float,
-        ),
-        encoding="utf-8",
-    )
-
     return indicators
 
 
 def _save_bar_chart(
     series: pd.Series,
+    *,
     title: str,
     xlabel: str,
     output: Path,
     horizontal: bool = True,
 ) -> None:
-    """Salva um gráfico de barras."""
-
     if series.empty:
         return
-
-    fig, ax = plt.subplots(
-        figsize=(9, 5)
-    )
-
+    fig, ax = plt.subplots(figsize=(10, 6))
     if horizontal:
-
-        series.sort_values().plot.barh(
-            ax=ax
-        )
-
+        series.sort_values().plot.barh(ax=ax)
         ax.set_xlabel(xlabel)
         ax.set_ylabel("")
-
     else:
-
-        series.plot.bar(
-            ax=ax
-        )
-
+        series.plot.bar(ax=ax)
         ax.set_ylabel(xlabel)
         ax.set_xlabel("")
-
     ax.set_title(title)
-
     fig.tight_layout()
-
-    fig.savefig(
-        output,
-        dpi=160,
-    )
-
+    fig.savefig(output, dpi=160)
     plt.close(fig)
 
 
-def generate_charts(
-    df: pd.DataFrame,
-    directory: str | Path,
-) -> None:
-    """Gera os gráficos obrigatórios do projeto."""
-
+def generate_charts(df: pd.DataFrame, directory: str | Path) -> None:
+    """Gera gráficos PNG legíveis, incluindo os três grupos obrigatórios."""
     path = Path(directory)
-
-    path.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    # ---------------------------------------------------------
-    # 1. Atendimentos por categoria
-    # ---------------------------------------------------------
+    path.mkdir(parents=True, exist_ok=True)
 
     if "categoria" in df.columns:
-
-        categoria = (
-            df["categoria"]
-            .fillna("Sem informação")
-            .value_counts()
-        )
-
         _save_bar_chart(
-            categoria,
-            "Atendimentos por categoria",
-            "Quantidade",
-            path / "atendimentos_categoria.png",
+            df["categoria"].fillna("Sem informação").replace("", "Sem informação").value_counts(),
+            title="Atendimentos por categoria",
+            xlabel="Quantidade de atendimentos",
+            output=path / "atendimentos_categoria.png",
         )
 
-    # ---------------------------------------------------------
-    # 2. Atendimentos por status
-    # ---------------------------------------------------------
-
-    if "status" in df.columns:
-
-        status = (
-            df["status"]
-            .fillna("Sem informação")
-            .value_counts()
+    if {"categoria", "tempo_minutos"}.issubset(df.columns):
+        temp = df.copy()
+        temp["tempo_minutos"] = pd.to_numeric(temp["tempo_minutos"], errors="coerce")
+        temp["categoria"] = temp["categoria"].fillna("Sem informação").replace(
+            "", "Sem informação"
         )
-
+        grouped = temp.dropna(subset=["tempo_minutos"]).groupby("categoria")[
+            "tempo_minutos"
+        ].mean()
         _save_bar_chart(
-            status,
-            "Atendimentos por status",
-            "Quantidade",
-            path / "atendimentos_status.png",
+            grouped,
+            title="Tempo médio por categoria",
+            xlabel="Minutos",
+            output=path / "tempo_medio_categoria.png",
         )
 
-    # ---------------------------------------------------------
-    # 3. Tempo médio por categoria
-    # ---------------------------------------------------------
-
-    if {
-        "categoria",
-        "tempo_minutos",
-    }.issubset(df.columns):
-
-        temp_df = df.copy()
-
-        temp_df["tempo_minutos"] = pd.to_numeric(
-            temp_df["tempo_minutos"],
-            errors="coerce",
-        )
-
-        tempo_categoria = (
-            temp_df
-            .dropna(
-                subset=["tempo_minutos"]
-            )
-            .groupby("categoria")[
-                "tempo_minutos"
-            ]
-            .mean()
-            .sort_values()
-        )
-
-        _save_bar_chart(
-            tempo_categoria,
-            "Tempo médio por categoria",
-            "Minutos",
-            path / "tempo_medio_categoria.png",
-        )
-
-    # ---------------------------------------------------------
-    # 4. Atendimentos por método de extração
-    # ---------------------------------------------------------
-
-    if "metodo" in df.columns:
-
-        metodo = (
-            df["metodo"]
-            .fillna("Sem informação")
-            .value_counts()
-        )
-
-        _save_bar_chart(
-            metodo,
+    chart_specs = [
+        ("status", "Atendimentos por status", "Quantidade", "atendimentos_status.png"),
+        (
+            "metodo",
             "Atendimentos por método de extração",
             "Quantidade",
-            path / "atendimentos_metodo.png",
-        )
-
-    # ---------------------------------------------------------
-    # 5. Atendimentos por município
-    # ---------------------------------------------------------
-
-    if "municipio" in df.columns:
-
-        municipio = (
-            df["municipio"]
-            .fillna("Sem informação")
-            .value_counts()
-        )
-
-        _save_bar_chart(
-            municipio,
-            "Atendimentos por município",
-            "Quantidade",
-            path / "atendimentos_municipio.png",
-        )
-
-    # ---------------------------------------------------------
-    # 6. Registros por classificação
-    # ---------------------------------------------------------
-
-    if "classificacao" in df.columns:
-
-        classificacao = (
-            df["classificacao"]
-            .fillna("Sem informação")
-            .value_counts()
-        )
-
-        _save_bar_chart(
-            classificacao,
+            "atendimentos_metodo.png",
+        ),
+        ("municipio", "Atendimentos por município", "Quantidade", "atendimentos_municipio.png"),
+        (
+            "classificacao",
             "Registros por classificação",
             "Quantidade",
-            path / "registros_classificacao.png",
-        )
+            "registros_classificacao.png",
+        ),
+    ]
+    for column, title, xlabel, filename in chart_specs:
+        if column in df.columns:
+            series = (
+                df[column]
+                .fillna("Sem informação")
+                .replace("", "Sem informação")
+                .value_counts()
+            )
+            _save_bar_chart(
+                series,
+                title=title,
+                xlabel=xlabel,
+                output=path / filename,
+            )

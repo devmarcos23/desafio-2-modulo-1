@@ -4,12 +4,19 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Artefatos reproduzíveis gerados localmente
 database/*.db
 database/chroma/
 output/*.csv
 output/*.json
 output/*.log
 output/graficos/*.png
-database/atendimentos.db
-chroma_db/
-.venv312/
+
+# Sistema/IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
