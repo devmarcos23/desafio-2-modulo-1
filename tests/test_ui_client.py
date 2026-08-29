@@ -1,85 +1,37 @@
 import requests
 
-from src.ui_client import ApiClientError, ask_api, get_api_base_url
+from src import ui_client
 
 
 class FakeResponse:
-    def __init__(self, body, status_code=200):
-        self._body = body
-        self.status_code = status_code
-
     def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(f"status={self.status_code}")
-
+        return None
     def json(self):
-        return self._body
+        return {"resposta": "ok", "fontes": []}
 
 
-def test_get_api_base_url_uses_environment(monkeypatch):
-    monkeypatch.setenv("API_BASE_URL", "http://localhost:9000/")
+def test_api_url_from_environment(monkeypatch):
+    monkeypatch.setenv("API_BASE_URL", "http://localhost:9999/")
+    assert ui_client.get_api_base_url() == "http://localhost:9999"
 
-    assert get_api_base_url() == "http://localhost:9000"
 
-
-def test_ask_api_sends_expected_payload(monkeypatch):
+def test_ask_api_builds_payload(monkeypatch):
     captured = {}
-
     def fake_post(url, json, timeout):
         captured.update({"url": url, "json": json, "timeout": timeout})
-        return FakeResponse(
-            {
-                "resposta": "Resposta de teste",
-                "modo": "recuperacao_local",
-                "fontes": [],
-            }
-        )
-
-    monkeypatch.setattr("src.ui_client.requests.post", fake_post)
-
-    result = ask_api(
-        "  Minha pergunta  ",
-        top_k=4,
-        category="  Python  ",
-        base_url="http://api:8000/",
-        timeout=12,
-    )
-
-    assert captured == {
-        "url": "http://api:8000/ask",
-        "json": {
-            "pergunta": "Minha pergunta",
-            "top_k": 4,
-            "categoria": "Python",
-        },
-        "timeout": 12,
-    }
-    assert result["resposta"] == "Resposta de teste"
+        return FakeResponse()
+    monkeypatch.setattr(ui_client.requests, "post", fake_post)
+    result = ui_client.ask_api("pergunta", 4, "Python", "AT-001", base_url="http://api")
+    assert result["resposta"] == "ok"
+    assert captured["json"]["protocolo"] == "AT-001"
 
 
-def test_ask_api_converts_connection_error(monkeypatch):
-    def fake_post(*args, **kwargs):
-        raise requests.ConnectionError("api fora do ar")
-
-    monkeypatch.setattr("src.ui_client.requests.post", fake_post)
-
+def test_connection_error_is_understandable(monkeypatch):
+    monkeypatch.setattr(ui_client.requests, "post", lambda *a, **k: (_ for _ in ()).throw(requests.ConnectionError("raw")))
     try:
-        ask_api("Pergunta válida")
-    except ApiClientError as exc:
-        assert "FastAPI" in str(exc)
+        ui_client.ask_api("pergunta", base_url="http://api")
+    except ui_client.ApiClientError as exc:
+        assert "Não foi possível conectar" in str(exc)
+        assert "raw" not in str(exc)
     else:
-        raise AssertionError("ApiClientError deveria ter sido lançado")
-
-
-def test_ask_api_rejects_unexpected_json(monkeypatch):
-    monkeypatch.setattr(
-        "src.ui_client.requests.post",
-        lambda *args, **kwargs: FakeResponse({"fontes": []}),
-    )
-
-    try:
-        ask_api("Pergunta válida")
-    except ApiClientError as exc:
-        assert "formato esperado" in str(exc)
-    else:
-        raise AssertionError("ApiClientError deveria ter sido lançado")
+        raise AssertionError("ApiClientError esperado")

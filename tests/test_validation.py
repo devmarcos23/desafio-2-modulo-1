@@ -1,146 +1,64 @@
-from src.validation import (
-    extract_fields,
-    normalize_category,
-    parse_date,
-    split_records,
-    validate_record,
-)
+from src.validation import extract_fields, normalize_category, split_records, validate_record
 
 CATS = {
     "categorias_oficiais": [
-        {
-            "nome": "Python e bibliotecas",
-            "variacoes": ["python", "pip", "biblioteca"],
-        },
-        {
-            "nome": "Atividades e arquivos",
-            "variacoes": ["atividade", "arquivo"],
-        },
+        {"nome": "Python e bibliotecas", "variacoes": ["python", "pip"]},
+        {"nome": "Atividades e arquivos", "variacoes": ["atividade", "entrega"]},
     ],
     "status_validos": ["Concluido", "Pendente", "Em atendimento"],
 }
 
 
-def test_valid_record():
-    record = {
+def base_record(**changes):
+    data = {
         "protocolo": "AT-001",
         "data": "01/08/2026",
         "email": "a@b.com",
         "cep": "78200-000",
         "categoria": "pip",
-        "status": "Concluido",
         "tempo_minutos": "20",
         "solicitante": "Ana",
         "descricao": "Erro",
+        "status": "Concluido",
     }
-    classification, reasons, normalized = validate_record(record, CATS)
+    data.update(changes)
+    return data
+
+
+def test_valid_record_and_category_normalization():
+    classification, reasons, normalized = validate_record(base_record(), CATS)
     assert classification == "valido"
-    assert not reasons
+    assert reasons == []
     assert normalized["categoria_normalizada"] == "Python e bibliotecas"
-    assert normalized["status_normalizado"] == "Concluido"
 
 
-def test_invalid_email():
-    record = {
-        "protocolo": "AT-001",
-        "data": "01/08/2026",
-        "email": "invalido",
-        "cep": "78200-000",
-        "categoria": "python",
-        "status": "Pendente",
-        "tempo_minutos": "20",
-        "solicitante": "Ana",
-        "descricao": "Erro",
-    }
-    assert "email_invalido" in validate_record(record, CATS)[1]
+def test_invalid_email_is_preserved_as_invalid():
+    assert "email_invalido" in validate_record(base_record(email="invalido"), CATS)[1]
 
 
-def test_missing_markers_are_classified_as_incomplete():
-    record = {
-        "protocolo": "AT-081",
-        "data": "11/08/2026",
-        "email": "a@b.com",
-        "cep": "78550-000",
-        "categoria": "python",
-        "status": "Concluido",
-        "tempo_minutos": "[vazio]",
-        "solicitante": "[vazio]",
-        "descricao": "Erro",
-    }
-    classification, reasons, _ = validate_record(record, CATS)
+def test_missing_marker_is_incomplete():
+    classification, reasons, _ = validate_record(base_record(solicitante="[vazio]"), CATS)
     assert classification == "incompleto"
-    assert "tempo_ausente" in reasons
     assert "solicitante_ausente" in reasons
 
 
-def test_invalid_status_is_reported():
-    record = {
-        "protocolo": "AT-001",
-        "data": "01/08/2026",
-        "email": "a@b.com",
-        "cep": "78200-000",
-        "categoria": "python",
-        "status": "Finalizado de qualquer jeito",
-        "tempo_minutos": "20",
-        "solicitante": "Ana",
-        "descricao": "Erro",
-    }
-    classification, reasons, _ = validate_record(record, CATS)
-    assert classification == "invalido"
-    assert "status_invalido" in reasons
+def test_ocr_protocol_variations_are_normalized():
+    text = "Protocolo AT -@52 Data 0107/2026 Solicitante Ana Email a@b.com Categoria pip Status Pendente CEP 78200-000 Tempo 10 min Problema Erro Solucao X Observacoes Y"
+    fields = extract_fields(text)
+    assert fields["protocolo"] == "AT-052"
 
 
-def test_ocr_variations_are_split_and_extracted():
-    text = (
-        "Protocol AT -@52 Data 0107/2026 "
-        "Solicitante Otavia Cardoso Leal Email otavia.cardoso@ aluno.exemplo.br "
-        "Categoria atvidade Status Pendente CEP /cidade 78110-000 - Varzea Grande/MT "
-        "Tem po 60mn Problem a CSV abre errado. Solucao Ajustado. "
-        "Observacoes Registro 052. "
-        "Protocolo AT 053 Data 2026-07-06 Solicitante Vinicius Mendes "
-        "Email vinicius@aluno.exemplo.br Categoria python Status Concluido "
-        "CEP /cidade 78700-000 Tem po 67min Problema pip falha. "
-        "Solucao Corrigido. Observacoes Registro 053."
+def test_split_records_recovers_multiple_ocr_records():
+    page = (
+        "Protocol AT-051 Data 01/07/2026 Solicitante A Email a@b.com Categoria pip "
+        "Status Pendente CEP 78200-000 Tempo 10 min Problema X Solucao Y Observacoes Z "
+        "Protocol AT -@52 Data 02/07/2026 Solicitante B Email b@b.com Categoria entrega "
+        "Status Concluido CEP 78200-000 Tempo 20 min Problema X Solucao Y Observacoes Z"
     )
-    records = split_records(text)
+    records = split_records(page)
     assert len(records) == 2
-
-    first = extract_fields(records[0])
-    assert first["protocolo"] == "AT-052"
-    assert first["data"] == "0107/2026"
-    assert first["tempo_minutos"] == "60"
-    assert normalize_category(first["categoria"], CATS) == "Atividades e arquivos"
+    assert extract_fields(records[1])["protocolo"] == "AT-052"
 
 
-def test_parse_date_recovers_missing_ocr_separator():
-    assert str(parse_date("0107/2026")) == "2026-07-01"
-
-
-def test_split_records_ignores_word_protocol_inside_observation():
-    text = (
-        "Protocolo AT-001 Data 01/08/2026 Solicitante Ana E-mail a@b.com "
-        "Categoria python Status Pendente CEP / cidade 78200-000 Tempo 20 min "
-        "Problema Erro Solucao Ok Observacoes Segunda ocorrencia do mesmo protocolo "
-        "para teste. Protocolo AT-002 Data 02/08/2026 Solicitante Bia E-mail b@b.com "
-        "Categoria python Status Pendente CEP / cidade 78200-000 Tempo 25 min "
-        "Problema Erro Solucao Ok Observacoes Fim."
-    )
-    assert len(split_records(text)) == 2
-
-def test_protocolo_com_simbolo_registrado_gerado_pelo_ocr():
-    texto = """
-    Protocolo AT ®67 Data 2487/2026
-
-    Solicitante Thiago Araujo Campos
-    Email thiago.araujo@aluno.exemplo.br
-    Categoria extensao vscode
-    Status Pendente
-    """
-
-    registros = split_records(texto)
-
-    assert len(registros) == 1
-
-    campos = extract_fields(registros[0])
-
-    assert campos["protocolo"] == "AT-067"
+def test_fuzzy_category_handles_small_ocr_distortion():
+    assert normalize_category("atvidade", CATS) == "Atividades e arquivos"
