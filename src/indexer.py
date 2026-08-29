@@ -1,89 +1,121 @@
-﻿"""Indexação e busca semântica dos chunks persistidos no ChromaDB."""
+"""Indexação dos chunks persistidos no ChromaDB."""
 
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
+from typing import Any
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from .models import Chunk
 from .embeddings import EmbeddingService
+from .models import Chunk
 from .vector_store import ChromaStore
 
 
-def _database_url(cfg: dict) -> str:
-    """Resolve a URL do SQLite a partir da raiz do projeto."""
-
+def _build_database_url(cfg: dict[str, Any]) -> str:
+    """Monta a URL do banco SQLite de forma compatível com o projeto."""
     root = Path(cfg["_root"])
-    url = cfg["banco"]["url"]
+    url = str(cfg["banco"]["url"])
 
     if url.startswith("sqlite:///") and not url.startswith("sqlite:////"):
-        return "sqlite:///" + str(root / url[10:])
+        relative_path = url[len("sqlite:///") :]
+        database_path = root / relative_path
+        return f"sqlite:///{database_path}"
 
     return url
 
 
-def build_index(cfg: dict) -> int:
-    """
-    Sincroniza todos os chunks do SQLite com o ChromaDB.
+def _load_chunks(cfg: dict[str, Any]) -> list[Chunk]:
+    """Carrega todos os chunks persistidos no banco."""
+    database_url = _build_database_url(cfg)
 
-    O SQLite é a fonte oficial dos dados.
-    """
-
-    root = Path(cfg["_root"])
-    url = _database_url(cfg)
-
-    engine = create_engine(url)
-
-    with Session(engine) as session:
-        chunks = list(
-            session.scalars(
-                select(Chunk).order_by(Chunk.id)
-            ).all()
-        )
-
-    store = ChromaStore(
-        root / cfg["chromadb"]["diretorio"],
-        cfg["chromadb"]["colecao"],
+    engine = create_engine(
+        database_url,
+        future=True,
     )
 
-    # ---------------------------------------------------------
-    # Banco vazio
-    # ---------------------------------------------------------
+    try:
+        with Session(engine) as session:
+            return list(
+                session.scalars(
+                    select(Chunk).order_by(
+                        Chunk.id
+                    )
+                ).all()
+            )
+    finally:
+        engine.dispose()
+
+
+def _metadata_from_chunk(chunk: Chunk) -> dict[str, Any]:
+    """Converte os metadados persistidos do chunk para dicionário."""
+    if not chunk.metadata_json:
+        return {}
+
+    try:
+        metadata = json.loads(chunk.metadata_json)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+    if not isinstance(metadata, dict):
+        return {}
+
+    return metadata
+
+
+def build_index(cfg: dict[str, Any]) -> int:
+    """
+    Gera embeddings dos chunks e persiste no ChromaDB.
+
+    Os IDs utilizados são os IDs dos próprios chunks no SQLite.
+    Isso torna a indexação idempotente: executar novamente não
+    cria duplicatas no ChromaDB.
+
+    Returns:
+        Quantidade de chunks indexados.
+    """
+    root = Path(cfg["_root"])
+
+    chunks = _load_chunks(cfg)
 
     if not chunks:
-        store.sync(
-            ids=[],
-            documents=[],
-            metadatas=[],
-            embeddings=[],
-        )
-
         return 0
 
-    # ---------------------------------------------------------
-    # Geração dos embeddings
-    # ---------------------------------------------------------
+    documents = [
+        str(chunk.conteudo or "").strip()
+        for chunk in chunks
+    ]
+
+    valid_items = [
+        (chunk, document)
+        for chunk, document in zip(chunks, documents)
+        if document
+    ]
+
+    if not valid_items:
+        return 0
+
+    chunks = [item[0] for item in valid_items]
+    documents = [item[1] for item in valid_items]
 
     service = EmbeddingService(
         cfg["embeddings"]["modelo"]
     )
 
-    documents = [
-        chunk.conteudo
-        for chunk in chunks
-    ]
+    vectors = service.encode(
+        documents
+    )
 
-    vectors = service.encode(documents)
-
-    # ---------------------------------------------------------
-    # Metadados
-    # ---------------------------------------------------------
+    if vectors.shape[0] != len(chunks):
+        raise RuntimeError(
+            "A quantidade de embeddings gerados "
+            "não corresponde à quantidade de chunks."
+        )
 
     metadatas = [
-        json.loads(chunk.metadata_json)
+        _metadata_from_chunk(chunk)
         for chunk in chunks
     ]
 
@@ -92,11 +124,12 @@ def build_index(cfg: dict) -> int:
         for chunk in chunks
     ]
 
-    # ---------------------------------------------------------
-    # Sincronização
-    # ---------------------------------------------------------
+    store = ChromaStore(
+        root / cfg["chromadb"]["diretorio"],
+        cfg["chromadb"]["colecao"],
+    )
 
-    store.sync(
+    store.upsert(
         ids=ids,
         documents=documents,
         metadatas=metadatas,
@@ -107,21 +140,28 @@ def build_index(cfg: dict) -> int:
 
 
 def semantic_query(
-    cfg: dict,
+    cfg: dict[str, Any],
     question: str,
     top_k: int = 5,
     category: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
-    Executa busca semântica.
+    Realiza uma busca semântica no ChromaDB.
 
-    Retorna no máximo um resultado por protocolo.
+    Args:
+        cfg: Configuração da aplicação.
+        question: Pergunta utilizada na busca.
+        top_k: Quantidade máxima de resultados.
+        category: Filtro opcional por categoria.
+
+    Returns:
+        Lista dos chunks mais semelhantes.
     """
+    if not question or not question.strip():
+        return []
 
-    if top_k < 1:
-        raise ValueError(
-            "top_k deve ser maior ou igual a 1"
-        )
+    if top_k <= 0:
+        return []
 
     root = Path(cfg["_root"])
 
@@ -138,82 +178,39 @@ def semantic_query(
         cfg["chromadb"]["colecao"],
     )
 
-    where = (
-        {"categoria": category}
-        if category
-        else None
-    )
+    where = None
 
-    # Buscamos candidatos extras porque vários chunks
-    # podem pertencer ao mesmo protocolo.
-    candidate_k = max(
-        top_k * 5,
-        20,
-    )
-
-    # Evita pedir mais resultados do que existem.
-    total = store.collection.count()
-
-    if total == 0:
-        return []
-
-    candidate_k = min(
-        candidate_k,
-        total,
-    )
+    if category and category.strip():
+        where = {
+            "categoria": category.strip()
+        }
 
     rows = store.query(
         embedding=query_vector,
-        top_k=candidate_k,
+        top_k=top_k,
         where=where,
     )
 
-    # ---------------------------------------------------------
-    # Remove duplicidades por protocolo
-    # ---------------------------------------------------------
-
-    best_by_protocol: dict[str, dict] = {}
+    results: list[dict[str, Any]] = []
 
     for row in rows:
-        metadata = row.get("metadata") or {}
-
-        protocolo = metadata.get("protocolo")
-
-        if not protocolo:
-            protocolo = (
-                f"{metadata.get('documento', '')}:"
-                f"{metadata.get('pagina', '')}:"
-                f"{len(best_by_protocol)}"
-            )
-
-        resultado = {
-            **metadata,
-            "conteudo": row["conteudo"],
-            "similaridade": round(
-                float(row["similaridade"]),
-                4,
-            ),
-        }
-
-        existente = best_by_protocol.get(
-            protocolo
+        metadata = dict(
+            row.get("metadata") or {}
         )
 
-        if (
-            existente is None
-            or resultado["similaridade"]
-            > existente["similaridade"]
-        ):
-            best_by_protocol[protocolo] = resultado
+        results.append(
+            {
+                **metadata,
+                "id": row.get("id"),
+                "conteudo": row.get("conteudo"),
+                "distancia": row.get("distancia"),
+                "similaridade": round(
+                    float(row["similaridade"]),
+                    4,
+                )
+                if row.get("similaridade") is not None
+                else None,
+            }
+        )
 
-    # ---------------------------------------------------------
-    # Ordenação
-    # ---------------------------------------------------------
-
-    resultados = sorted(
-        best_by_protocol.values(),
-        key=lambda item: item["similaridade"],
-        reverse=True,
-    )
-
-    return resultados[:top_k]
+    return results

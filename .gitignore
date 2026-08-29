@@ -12,3 +12,4 @@ output/*.log
 output/graficos/*.png
 database/atendimentos.db
 chroma_db/
+.venv312/

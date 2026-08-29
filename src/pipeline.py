@@ -1,105 +1,882 @@
-﻿"""Orquestração do processamento ponta a ponta."""
+"""Orquestração do processamento ponta a ponta."""
 
 from __future__ import annotations
 
-from pathlib import Path
+import json
+import logging
+import re
 from hashlib import sha256
-import json, logging
+from pathlib import Path
+
 import pandas as pd
 from sqlalchemy import select
 
+from .analytics import export_results, generate_charts
 from .config import resolve
-from .database import create_session_factory, session_scope, find_by_protocol
-from .models import Documento, Atendimento, Chunk, ErroProcessamento
-from .pdf_processor import extract_pdf_pages
+from .database import (
+    create_session_factory,
+    find_by_protocol,
+    session_scope,
+)
+from .models import (
+    Atendimento,
+    Chunk,
+    Documento,
+    ErroProcessamento,
+)
 from .ocr_processor import ocr_page
+from .pdf_processor import extract_pdf_pages
+from .text_processor import (
+    metadata_json,
+    preprocess,
+    split_chunks,
+)
 from .validation import (
+    clean_text,
     extract_fields,
-    is_valid_protocol,
-    split_records as split_attendance_records,
     validate_record,
 )
-from .text_processor import preprocess, split_chunks, metadata_json
-from .analytics import export_results, generate_charts
 
-def configure_logging(path: Path):
-    path.parent.mkdir(parents=True,exist_ok=True)
-    logging.basicConfig(level=logging.INFO,format="%(asctime)s %(levelname)s %(message)s",handlers=[logging.FileHandler(path,encoding="utf-8"),logging.StreamHandler()])
+
+def configure_logging(path: Path) -> None:
+    """Configura o log do processamento."""
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(
+                path,
+                encoding="utf-8",
+            ),
+            logging.StreamHandler(),
+        ],
+    )
+
 
 def split_records(page_text: str) -> list[str]:
-    """Compatibilidade: delega a segmentação para o módulo de validação."""
-    return split_attendance_records(page_text)
+    """
+    Divide o texto de uma página em registros de atendimento.
+
+    Formatos esperados:
+
+        Protocolo AT-001
+        Protocolo?
+    """
+
+    text = clean_text(page_text)
+
+    parts = re.split(
+        r"(?=Protocolo\s+(?:AT-\d{3}|PROTOCOLO\?))",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    return [
+        part.strip()
+        for part in parts
+        if re.search(
+            r"Protocolo\s+",
+            part,
+            flags=re.IGNORECASE,
+        )
+    ]
+
+
+def _database_url(cfg: dict, root: Path) -> str:
+    """Resolve a URL do banco SQLite."""
+
+    db_url = cfg["banco"]["url"]
+
+    if db_url.startswith("sqlite:/// "):
+        return (
+            "sqlite:///"
+            + str(
+                root
+                / db_url.removeprefix(
+                    "sqlite:/// "
+                )
+            )
+        )
+
+    if (
+        db_url.startswith("sqlite:///")
+        and not db_url.startswith("sqlite:////")
+    ):
+        return (
+            "sqlite:///"
+            + str(
+                root
+                / db_url[10:]
+            )
+        )
+
+    return db_url
+
+
+def _load_categories(root: Path) -> dict:
+    """Carrega as categorias auxiliares."""
+
+    categories_path = (
+        root
+        / "data"
+        / "auxiliares"
+        / "categorias.json"
+    )
+
+    return json.loads(
+        categories_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+
+def _atendimento_to_row(
+    atendimento: Atendimento,
+) -> dict:
+    """
+    Converte um Atendimento SQLAlchemy em registro
+    compatível com o DataFrame usado pelo Analytics.
+    """
+
+    return {
+        "protocolo": atendimento.protocolo,
+        "data": atendimento.data,
+        "solicitante": atendimento.solicitante,
+        "email": atendimento.email,
+        "categoria": atendimento.categoria,
+        "descricao": atendimento.descricao,
+        "solucao": atendimento.solucao,
+        "tempo_minutos": atendimento.tempo_minutos,
+        "status": atendimento.status,
+        "cep": atendimento.cep,
+        "municipio": atendimento.municipio,
+        "uf": atendimento.uf,
+        "classificacao": atendimento.classificacao,
+        "motivos": atendimento.motivos,
+        "documento": (
+            atendimento.documento.nome_arquivo
+            if atendimento.documento
+            else None
+        ),
+        "pagina": atendimento.pagina,
+        "metodo": (
+            atendimento.documento.metodo
+            if atendimento.documento
+            else None
+        ),
+    }
+
+
+def _load_database_data(
+    factory,
+) -> tuple[pd.DataFrame, pd.DataFrame, int, int, int]:
+    """
+    Recupera os dados históricos do banco.
+
+    Retorna:
+
+        DataFrame de atendimentos
+        DataFrame de erros
+        total de documentos
+        total de páginas
+        total de páginas OCR
+    """
+
+    with session_scope(factory) as session:
+
+        # -----------------------------------------------------
+        # Documentos
+        # -----------------------------------------------------
+
+        documentos = session.scalars(
+            select(Documento)
+        ).all()
+
+        total_documentos = len(documentos)
+
+        total_paginas = sum(
+            int(documento.total_paginas or 0)
+            for documento in documentos
+        )
+
+        paginas_ocr = sum(
+            int(
+                getattr(
+                    documento,
+                    "paginas_ocr",
+                    0,
+                )
+                or 0
+            )
+            for documento in documentos
+        )
+
+        # -----------------------------------------------------
+        # Atendimentos
+        # -----------------------------------------------------
+
+        atendimentos = session.scalars(
+            select(Atendimento)
+        ).all()
+
+        rows = [
+            _atendimento_to_row(
+                atendimento
+            )
+            for atendimento in atendimentos
+        ]
+
+        df = pd.DataFrame(rows)
+
+        # -----------------------------------------------------
+        # Erros
+        # -----------------------------------------------------
+
+        erros = session.scalars(
+            select(ErroProcessamento)
+        ).all()
+
+        erros_rows = [
+            {
+                "tipo": erro.tipo,
+                "etapa": erro.etapa,
+                "pagina": erro.pagina,
+                "mensagem": erro.mensagem,
+            }
+            for erro in erros
+        ]
+
+        erros_df = pd.DataFrame(
+            erros_rows
+        )
+
+    return (
+        df,
+        erros_df,
+        total_documentos,
+        total_paginas,
+        paginas_ocr,
+    )
+
+
+def _export_database_indicators(
+    factory,
+    output: Path,
+    cfg: dict,
+    root: Path,
+) -> pd.DataFrame:
+    """
+    Gera novamente CSV, indicadores e gráficos
+    usando os dados existentes no banco.
+
+    Isso evita que uma execução sem PDFs novos
+    gere indicadores zerados.
+    """
+
+    (
+        df,
+        erros_df,
+        total_documentos,
+        total_paginas,
+        paginas_ocr,
+    ) = _load_database_data(factory)
+
+    if df.empty:
+        logging.warning(
+            "Banco sem atendimentos para gerar indicadores."
+        )
+        return df
+
+    export_results(
+        df,
+        output,
+        cfg["saida"]["csv"],
+        cfg["saida"]["indicadores"],
+        total_documentos=total_documentos,
+        total_paginas=total_paginas,
+        paginas_ocr=paginas_ocr,
+        erros=erros_df,
+    )
+
+    generate_charts(
+        df,
+        resolve(
+            root,
+            cfg["saida"]["graficos"],
+        ),
+    )
+
+    logging.info(
+        "Indicadores históricos atualizados: "
+        "documentos=%s, páginas=%s, páginas OCR=%s, "
+        "registros=%s, erros=%s",
+        total_documentos,
+        total_paginas,
+        paginas_ocr,
+        len(df),
+        len(erros_df),
+    )
+
+    return df
+
 
 def process_all(cfg: dict) -> pd.DataFrame:
-    root=Path(cfg["_root"]); output=resolve(root,cfg["saida"]["diretorio"]); output.mkdir(parents=True,exist_ok=True)
-    configure_logging(output/cfg["saida"]["log"])
-    categories=json.loads((root/"data"/"auxiliares"/"categorias.json").read_text(encoding="utf-8"))
-    db_url=cfg["banco"]["url"]
-    if db_url.startswith("sqlite:/// "): db_url="sqlite:///"+str(root/db_url.removeprefix("sqlite:/// "))
-    elif db_url.startswith("sqlite:///") and not db_url.startswith("sqlite:////"): db_url="sqlite:///"+str(root/db_url[10:])
-    factory=create_session_factory(db_url)
-    pdf_dir=resolve(root,cfg["entrada"]["diretorio_pdfs"]); rows=[]
+    """
+    Executa o processamento completo dos PDFs.
+
+    Fluxo:
+
+        PDF
+          ↓
+        Extração direta / OCR
+          ↓
+        Validação
+          ↓
+        Deduplicação
+          ↓
+        SQLite
+          ↓
+        Chunks
+          ↓
+        CSV + indicadores + gráficos
+
+    Quando todos os documentos já estiverem processados,
+    os indicadores são reconstruídos a partir do banco.
+    """
+
+    root = Path(cfg["_root"])
+
+    # =========================================================
+    # Saída
+    # =========================================================
+
+    output = resolve(
+        root,
+        cfg["saida"]["diretorio"],
+    )
+
+    output.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    configure_logging(
+        output / cfg["saida"]["log"]
+    )
+
+    # =========================================================
+    # Categorias
+    # =========================================================
+
+    categories = _load_categories(root)
+
+    # =========================================================
+    # Banco
+    # =========================================================
+
+    db_url = _database_url(
+        cfg,
+        root,
+    )
+
+    factory = create_session_factory(
+        db_url
+    )
+
+    # =========================================================
+    # PDFs
+    # =========================================================
+
+    pdf_dir = resolve(
+        root,
+        cfg["entrada"]["diretorio_pdfs"],
+    )
+
+    rows: list[dict] = []
+
+    total_documentos = 0
+    total_paginas = 0
+    paginas_ocr = 0
+
+    # =========================================================
+    # Processamento
+    # =========================================================
+
     with session_scope(factory) as session:
-        for pdf in sorted(pdf_dir.glob(cfg["entrada"]["padrao"])):
-            digest=sha256(pdf.read_bytes()).hexdigest(); page_data=extract_pdf_pages(pdf,cfg["ocr"]["min_caracteres_extracao_direta"])
-            if session.scalar(select(Documento).where(Documento.hash_sha256==digest)):
-                logging.info("Documento já processado; ignorando: %s",pdf.name)
+
+        for pdf in sorted(
+            pdf_dir.glob(
+                cfg["entrada"]["padrao"]
+            )
+        ):
+
+            logging.info(
+                "Processando documento: %s",
+                pdf.name,
+            )
+
+            # -------------------------------------------------
+            # Hash
+            # -------------------------------------------------
+
+            digest = sha256(
+                pdf.read_bytes()
+            ).hexdigest()
+
+            # -------------------------------------------------
+            # Extração inicial
+            # -------------------------------------------------
+
+            page_data = extract_pdf_pages(
+                pdf,
+                cfg["ocr"][
+                    "min_caracteres_extracao_direta"
+                ],
+            )
+
+            # -------------------------------------------------
+            # Documento já processado
+            # -------------------------------------------------
+
+            documento_existente = session.scalar(
+                select(Documento).where(
+                    Documento.hash_sha256
+                    == digest
+                )
+            )
+
+            if documento_existente:
+
+                logging.info(
+                    "Documento já processado; ignorando: %s",
+                    pdf.name,
+                )
+
                 continue
-            method="ocr" if all(p["metodo"]=="ocr_pendente" for p in page_data) else "extracao_direta"
-            doc=Documento(nome_arquivo=pdf.name,hash_sha256=digest,total_paginas=len(page_data),metodo=method); session.add(doc); session.flush()
+
+            # -------------------------------------------------
+            # Contadores
+            # -------------------------------------------------
+
+            total_documentos += 1
+            total_paginas += len(page_data)
+
+            paginas_ocr_documento = 0
+
+            # -------------------------------------------------
+            # Método
+            # -------------------------------------------------
+
+            method = (
+                "ocr"
+                if page_data
+                and all(
+                    page["metodo"]
+                    == "ocr_pendente"
+                    for page in page_data
+                )
+                else "extracao_direta"
+            )
+
+            # -------------------------------------------------
+            # Documento
+            # -------------------------------------------------
+
+            doc = Documento(
+                nome_arquivo=pdf.name,
+                hash_sha256=digest,
+                total_paginas=len(
+                    page_data
+                ),
+                paginas_ocr=0,
+                metodo=method,
+            )
+
+            session.add(doc)
+            session.flush()
+
+            # -------------------------------------------------
+            # Páginas
+            # -------------------------------------------------
+
             for page in page_data:
-                text=page["texto"]
-                if page.get("erro_extracao"):
-                    session.add(
-                        ErroProcessamento(
-                            documento_id=doc.id,
-                            pagina=page["pagina"],
-                            etapa="extracao_pdf",
-                            tipo="FalhaExtracaoDireta",
-                            mensagem=page["erro_extracao"],
+
+                text = page["texto"]
+
+                # =============================================
+                # OCR
+                # =============================================
+
+                if (
+                    page["metodo"]
+                    == "ocr_pendente"
+                ):
+
+                    try:
+
+                        text = ocr_page(
+                            pdf,
+                            page["pagina"],
+                            cfg["ocr"]["dpi"],
+                            cfg["ocr"]["idioma"],
                         )
-                    )
-                if page["metodo"]=="ocr_pendente":
-                    try: text=ocr_page(pdf,page["pagina"],cfg["ocr"]["dpi"],cfg["ocr"]["idioma"]); page["metodo"]="ocr"
+
+                        page["metodo"] = "ocr"
+
+                        paginas_ocr += 1
+                        paginas_ocr_documento += 1
+
+                        logging.info(
+                            "OCR concluído: %s p.%s",
+                            pdf.name,
+                            page["pagina"],
+                        )
+
                     except Exception as exc:
-                        session.add(ErroProcessamento(documento_id=doc.id,pagina=page["pagina"],etapa="ocr",tipo=type(exc).__name__,mensagem=str(exc))); logging.exception("OCR falhou: %s p.%s",pdf.name,page["pagina"]); continue
-                for raw in split_records(text):
-                    fields=extract_fields(raw); classification,reasons,normalized=validate_record(fields,categories)
-                    extracted_protocol=normalized.get("protocolo", "")
-                    protocol_is_valid=is_valid_protocol(extracted_protocol)
-                    storage_protocol=(
-                        extracted_protocol
-                        if protocol_is_valid
-                        else f"INVALIDO-{doc.id}-{page['pagina']}-{len(rows)+1}"
+
+                        session.add(
+                            ErroProcessamento(
+                                documento_id=doc.id,
+                                pagina=page["pagina"],
+                                etapa="ocr",
+                                tipo=type(
+                                    exc
+                                ).__name__,
+                                mensagem=str(
+                                    exc
+                                ),
+                            )
+                        )
+
+                        logging.exception(
+                            "OCR falhou: %s p.%s",
+                            pdf.name,
+                            page["pagina"],
+                        )
+
+                        continue
+
+                # =============================================
+                # Registros
+                # =============================================
+
+                for raw in split_records(
+                    text
+                ):
+
+                    # -----------------------------------------
+                    # Extração
+                    # -----------------------------------------
+
+                    fields = extract_fields(
+                        raw
                     )
-                    if protocol_is_valid and find_by_protocol(session,storage_protocol):
-                        classification="duplicado"; reasons.append("protocolo_duplicado")
-                    row={
+
+                    # -----------------------------------------
+                    # Validação
+                    # -----------------------------------------
+
+                    (
+                        classification,
+                        reasons,
+                        normalized,
+                    ) = validate_record(
+                        fields,
+                        categories,
+                    )
+
+                    # -----------------------------------------
+                    # Protocolo
+                    # -----------------------------------------
+
+                    protocol = (
+                        normalized.get(
+                            "protocolo"
+                        )
+                        or f"INVALIDO-{doc.id}-"
+                        f"{page['pagina']}-"
+                        f"{len(rows) + 1}"
+                    )
+
+                    # -----------------------------------------
+                    # Deduplicação
+                    # -----------------------------------------
+
+                    if find_by_protocol(
+                        session,
+                        protocol,
+                    ):
+
+                        classification = "duplicado"
+
+                        reasons.append(
+                            "protocolo_duplicado"
+                        )
+
+                    # -----------------------------------------
+                    # DataFrame
+                    # -----------------------------------------
+
+                    row = {
                         **fields,
-                        "protocolo":extracted_protocol,
-                        "email":normalized.get("email", fields.get("email")),
-                        "categoria":normalized.get("categoria_normalizada") or fields.get("categoria"),
-                        "status":normalized.get("status_normalizado") or fields.get("status"),
-                        "cep":normalized.get("cep", fields.get("cep")),
-                        "solicitante":normalized.get("solicitante", fields.get("solicitante")),
-                        "descricao":normalized.get("descricao", fields.get("descricao")),
-                        "data":normalized.get("data_obj"),
-                        "tempo_minutos":normalized.get("tempo_obj"),
-                        "classificacao":classification,
-                        "motivos":";".join(reasons),
-                        "documento":pdf.name,
-                        "pagina":page["pagina"],
-                        "metodo":page["metodo"],
+                        "protocolo": protocol,
+                        "categoria": (
+                            normalized.get(
+                                "categoria_normalizada"
+                            )
+                            or fields.get(
+                                "categoria"
+                            )
+                        ),
+                        "data": normalized.get(
+                            "data_obj"
+                        ),
+                        "tempo_minutos": normalized.get(
+                            "tempo_obj"
+                        ),
+                        "classificacao": classification,
+                        "motivos": ";".join(
+                            reasons
+                        ),
+                        "documento": pdf.name,
+                        "pagina": page["pagina"],
+                        "metodo": page["metodo"],
                     }
+
                     rows.append(row)
-                    if classification=="duplicado":
-                        session.add(ErroProcessamento(documento_id=doc.id,pagina=page["pagina"],etapa="deduplicacao",tipo="Duplicidade",mensagem=storage_protocol)); continue
-                    item=Atendimento(documento_id=doc.id,pagina=page["pagina"],protocolo=storage_protocol,data=normalized.get("data_obj"),solicitante=row.get("solicitante"),email=row.get("email"),categoria=row["categoria"],descricao=row.get("descricao"),solucao=fields.get("solucao"),tempo_minutos=normalized.get("tempo_obj"),status=row.get("status"),cep=row.get("cep"),municipio=None,uf=None,classificacao=classification,motivos=row["motivos"],texto_original=raw,texto_limpo=preprocess(raw))
-                    session.add(item); session.flush()
-                    for idx,content in enumerate(split_chunks(raw,cfg["embeddings"]["tamanho_chunk"],cfg["embeddings"]["sobreposicao"])):
-                        meta={"protocolo":extracted_protocol or storage_protocol,"documento":pdf.name,"pagina":page["pagina"],"categoria":row["categoria"] or ""}
-                        session.add(Chunk(atendimento_id=item.id,documento_id=doc.id,pagina=page["pagina"],indice=idx,conteudo=content,metadata_json=metadata_json(**meta)))
-    df=pd.DataFrame(rows)
+
+                    # -----------------------------------------
+                    # Duplicado
+                    # -----------------------------------------
+
+                    if (
+                        classification
+                        == "duplicado"
+                    ):
+
+                        session.add(
+                            ErroProcessamento(
+                                documento_id=doc.id,
+                                pagina=page["pagina"],
+                                etapa="deduplicacao",
+                                tipo="Duplicidade",
+                                mensagem=protocol,
+                            )
+                        )
+
+                        continue
+
+                    # -----------------------------------------
+                    # Atendimento
+                    # -----------------------------------------
+
+                    item = Atendimento(
+                        documento_id=doc.id,
+                        pagina=page["pagina"],
+                        protocolo=protocol,
+                        data=normalized.get(
+                            "data_obj"
+                        ),
+                        solicitante=fields.get(
+                            "solicitante"
+                        ),
+                        email=fields.get(
+                            "email"
+                        ),
+                        categoria=row[
+                            "categoria"
+                        ],
+                        descricao=fields.get(
+                            "descricao"
+                        ),
+                        solucao=fields.get(
+                            "solucao"
+                        ),
+                        tempo_minutos=normalized.get(
+                            "tempo_obj"
+                        ),
+                        status=fields.get(
+                            "status"
+                        ),
+                        cep=fields.get(
+                            "cep"
+                        ),
+                        municipio=None,
+                        uf=None,
+                        classificacao=classification,
+                        motivos=row[
+                            "motivos"
+                        ],
+                        texto_original=raw,
+                        texto_limpo=preprocess(
+                            raw
+                        ),
+                    )
+
+                    session.add(item)
+                    session.flush()
+
+                    # -----------------------------------------
+                    # Chunks
+                    # -----------------------------------------
+
+                    chunks = split_chunks(
+                        raw,
+                        cfg["embeddings"][
+                            "tamanho_chunk"
+                        ],
+                        cfg["embeddings"][
+                            "sobreposicao"
+                        ],
+                    )
+
+                    for idx, content in enumerate(
+                        chunks
+                    ):
+
+                        meta = {
+                            "protocolo": protocol,
+                            "documento": pdf.name,
+                            "pagina": page["pagina"],
+                            "categoria": (
+                                row[
+                                    "categoria"
+                                ]
+                                or ""
+                            ),
+                        }
+
+                        session.add(
+                            Chunk(
+                                atendimento_id=item.id,
+                                documento_id=doc.id,
+                                pagina=page["pagina"],
+                                indice=idx,
+                                conteudo=content,
+                                metadata_json=metadata_json(
+                                    **meta
+                                ),
+                            )
+                        )
+
+            # -------------------------------------------------
+            # Persiste OCR
+            # -------------------------------------------------
+
+            doc.paginas_ocr = (
+                paginas_ocr_documento
+            )
+
+            logging.info(
+                "Documento concluído: %s | páginas=%s | OCR=%s",
+                pdf.name,
+                len(page_data),
+                paginas_ocr_documento,
+            )
+
+    # =========================================================
+    # DataFrame da execução
+    # =========================================================
+
+    df = pd.DataFrame(rows)
+
+    # =========================================================
+    # Existem PDFs novos?
+    # =========================================================
+
     if not df.empty:
-        export_results(df,output,cfg["saida"]["csv"],cfg["saida"]["indicadores"]); generate_charts(df,resolve(root,cfg["saida"]["graficos"]))
+
+        (
+            _,
+            erros_df,
+            _,
+            _,
+            _,
+        ) = _load_database_data(
+            factory
+        )
+
+        export_results(
+            df,
+            output,
+            cfg["saida"]["csv"],
+            cfg["saida"]["indicadores"],
+            total_documentos=total_documentos,
+            total_paginas=total_paginas,
+            paginas_ocr=paginas_ocr,
+            erros=erros_df,
+        )
+
+        generate_charts(
+            df,
+            resolve(
+                root,
+                cfg["saida"]["graficos"],
+            ),
+        )
+
+        logging.info(
+            "Indicadores da execução atualizados."
+        )
+
+    # =========================================================
+    # Não existem PDFs novos
+    # =========================================================
+
+    else:
+
+        logging.info(
+            "Nenhum documento novo encontrado."
+        )
+
+        df = _export_database_indicators(
+            factory,
+            output,
+            cfg,
+            root,
+        )
+
+        # Recupera os totais históricos para o log
+        (
+            _,
+            _,
+            total_documentos_db,
+            total_paginas_db,
+            paginas_ocr_db,
+        ) = _load_database_data(
+            factory
+        )
+
+        total_documentos = (
+            total_documentos_db
+        )
+
+        total_paginas = (
+            total_paginas_db
+        )
+
+        paginas_ocr = (
+            paginas_ocr_db
+        )
+
+    # =========================================================
+    # Log final
+    # =========================================================
+
+    logging.info(
+        "Processamento concluído: "
+        "documentos=%s, páginas=%s, páginas OCR=%s, "
+        "registros=%s",
+        total_documentos,
+        total_paginas,
+        paginas_ocr,
+        len(df),
+    )
+
     return df

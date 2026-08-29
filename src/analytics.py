@@ -1,167 +1,335 @@
-﻿"""Indicadores, exportações e gráficos."""
+"""Indicadores, exportações e gráficos."""
 
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 
-def _serie(df: pd.DataFrame, coluna: str) -> pd.Series:
-    """Retorna uma série segura mesmo quando a coluna não existe."""
-    if coluna in df.columns:
-        return df[coluna]
+def _series(df: pd.DataFrame, column: str) -> pd.Series:
+    """Retorna uma coluna ou uma Series vazia quando ela não existe."""
+
+    if column in df.columns:
+        return df[column]
 
     return pd.Series(dtype="object")
 
 
-def _contagem(df: pd.DataFrame, coluna: str) -> dict:
-    """Gera contagem por coluna, tratando valores ausentes."""
-    serie = _serie(df, coluna)
+def _counts(df: pd.DataFrame, column: str) -> dict:
+    """Calcula a quantidade de registros por valor."""
 
-    if serie.empty:
+    series = _series(df, column)
+
+    if series.empty:
         return {}
 
-    serie = serie.fillna("Sem informação").astype(str)
+    series = series.fillna("Sem informação")
 
     return {
-        str(chave): int(valor)
-        for chave, valor in serie.value_counts(dropna=False).items()
+        str(key): int(value)
+        for key, value in series.value_counts(
+            dropna=False
+        ).items()
     }
 
 
-def _total_documentos(df: pd.DataFrame) -> int:
-    """Calcula a quantidade de documentos distintos."""
-    serie = _serie(df, "documento")
+def _percentages(df: pd.DataFrame, column: str) -> dict:
+    """Calcula o percentual de registros por valor."""
 
-    if serie.empty:
-        return 0
+    counts = _counts(df, column)
+    total = len(df)
 
-    return int(serie.dropna().nunique())
+    if total == 0:
+        return {}
 
-
-def _total_paginas(df: pd.DataFrame) -> int:
-    """
-    Calcula a quantidade de páginas distintas.
-
-    A mesma página pode conter vários atendimentos, portanto
-    não devemos simplesmente usar len(df).
-    """
-    if "documento" not in df.columns or "pagina" not in df.columns:
-        return 0
-
-    paginas = (
-        df[["documento", "pagina"]]
-        .dropna()
-        .drop_duplicates()
-    )
-
-    return int(len(paginas))
+    return {
+        key: round((value / total) * 100, 2)
+        for key, value in counts.items()
+    }
 
 
-def _tempos(df: pd.DataFrame) -> np.ndarray:
-    """Retorna tempos numéricos válidos."""
+def _tempo_series(df: pd.DataFrame) -> pd.Series:
+    """Retorna os tempos válidos em minutos."""
+
     if "tempo_minutos" not in df.columns:
-        return np.array([], dtype=float)
+        return pd.Series(dtype=float)
 
-    serie = pd.to_numeric(
+    return pd.to_numeric(
         df["tempo_minutos"],
         errors="coerce",
     ).dropna()
 
-    return serie.to_numpy(dtype=float)
 
+def build_indicators(
+    df: pd.DataFrame,
+    total_documentos: int | None = None,
+    total_paginas: int | None = None,
+    paginas_ocr: int | None = None,
+    erros: pd.DataFrame | None = None,
+) -> dict:
+    """Calcula os indicadores exigidos pelo projeto."""
 
-def build_indicators(df: pd.DataFrame) -> dict:
-    """
-    Constrói os indicadores obrigatórios do projeto.
+    times = _tempo_series(df)
 
-    Indicadores:
-    - total de documentos;
-    - total de páginas;
-    - registros por classificação;
-    - registros por categoria;
-    - registros por status;
-    - registros por município;
-    - registros por método de extração;
-    - média, mediana e desvio padrão do tempo;
-    - percentual de OCR.
-    """
-    times = _tempos(df)
-
-    quantidade_ocr = int(
-        (_serie(df, "metodo").fillna("") == "ocr").sum()
+    classificacoes = _counts(
+        df,
+        "classificacao",
     )
 
-    total_registros = int(len(df))
-
-    percentual_ocr = (
-        float(quantidade_ocr / total_registros * 100)
-        if total_registros
-        else 0.0
+    categorias = _counts(
+        df,
+        "categoria",
     )
+
+    status = _counts(
+        df,
+        "status",
+    )
+
+    municipios = _counts(
+        df,
+        "municipio",
+    )
+
+    metodos = _counts(
+        df,
+        "metodo",
+    )
+
+    # ---------------------------------------------------------
+    # Total de documentos
+    # ---------------------------------------------------------
+
+    if total_documentos is None:
+
+        if "documento" in df.columns:
+            total_documentos = int(
+                df["documento"].nunique()
+            )
+        else:
+            total_documentos = 0
+
+    # ---------------------------------------------------------
+    # Total de páginas
+    # ---------------------------------------------------------
+
+    if total_paginas is None:
+
+        if {
+            "documento",
+            "pagina",
+        }.issubset(df.columns):
+
+            total_paginas = int(
+                df[
+                    [
+                        "documento",
+                        "pagina",
+                    ]
+                ]
+                .drop_duplicates()
+                .shape[0]
+            )
+
+        else:
+            total_paginas = 0
+
+    # ---------------------------------------------------------
+    # Categoria com maior volume
+    # ---------------------------------------------------------
+
+    categoria_maior_volume = None
+
+    if categorias:
+
+        categoria_maior_volume = max(
+            categorias,
+            key=categorias.get,
+        )
+
+    # ---------------------------------------------------------
+    # Tempo médio por categoria
+    # ---------------------------------------------------------
+
+    categoria_maior_tempo = None
+
+    tempos_categoria = {}
+
+    if {
+        "categoria",
+        "tempo_minutos",
+    }.issubset(df.columns):
+
+        temp_df = df.copy()
+
+        temp_df["tempo_minutos"] = pd.to_numeric(
+            temp_df["tempo_minutos"],
+            errors="coerce",
+        )
+
+        tempos = (
+            temp_df
+            .dropna(
+                subset=["tempo_minutos"]
+            )
+            .groupby("categoria")[
+                "tempo_minutos"
+            ]
+            .mean()
+            .dropna()
+        )
+
+        tempos_categoria = {
+            str(key): round(
+                float(value),
+                2,
+            )
+            for key, value in tempos.items()
+        }
+
+        if not tempos.empty:
+
+            categoria_maior_tempo = str(
+                tempos.idxmax()
+            )
+
+    # ---------------------------------------------------------
+    # Erros de processamento
+    # ---------------------------------------------------------
+
+    erros_por_tipo = {}
+    erros_por_etapa = {}
+
+    if erros is not None and not erros.empty:
+
+        if "tipo" in erros.columns:
+
+            erros_por_tipo = _counts(
+                erros,
+                "tipo",
+            )
+
+        if "etapa" in erros.columns:
+
+            erros_por_etapa = _counts(
+                erros,
+                "etapa",
+            )
+
+    # ---------------------------------------------------------
+    # Percentual de páginas processadas por OCR
+    # ---------------------------------------------------------
+
+    percentual_paginas_ocr = 0.0
+
+    if (
+        paginas_ocr is not None
+        and total_paginas is not None
+        and total_paginas > 0
+    ):
+
+        percentual_paginas_ocr = round(
+            (
+                paginas_ocr
+                / total_paginas
+            )
+            * 100,
+            2,
+        )
+
+    # ---------------------------------------------------------
+    # Resultado
+    # ---------------------------------------------------------
 
     return {
-        "total_documentos": _total_documentos(df),
-        "total_paginas": _total_paginas(df),
-        "total_registros": total_registros,
-
-        "registros_validos": int(
-            (_serie(df, "classificacao") == "valido").sum()
-        ),
-        "registros_incompletos": int(
-            (_serie(df, "classificacao") == "incompleto").sum()
-        ),
-        "registros_invalidos": int(
-            (_serie(df, "classificacao") == "invalido").sum()
-        ),
-        "registros_duplicados": int(
-            (_serie(df, "classificacao") == "duplicado").sum()
+        "total_documentos": int(
+            total_documentos
         ),
 
-        "por_classificacao": _contagem(
-            df,
-            "classificacao",
+        "total_paginas": int(
+            total_paginas
         ),
-        "por_categoria": _contagem(
-            df,
-            "categoria",
+
+        "total_registros": int(
+            len(df)
         ),
-        "por_status": _contagem(
-            df,
-            "status",
+
+        "por_classificacao": classificacoes,
+
+        "percentual_por_classificacao": (
+            _percentages(
+                df,
+                "classificacao",
+            )
         ),
-        "por_municipio": _contagem(
-            df,
-            "municipio",
-        ),
-        "por_metodo_extracao": _contagem(
-            df,
-            "metodo",
-        ),
+
+        "por_categoria": categorias,
+
+        "por_status": status,
+
+        "por_municipio": municipios,
+
+        "por_metodo_extracao": metodos,
 
         "tempo_medio": (
-            float(np.mean(times))
-            if times.size
-            else None
-        ),
-        "tempo_mediano": (
-            float(np.median(times))
-            if times.size
-            else None
-        ),
-        "tempo_desvio_padrao": (
-            float(np.std(times))
-            if times.size
+            round(
+                float(np.mean(times)),
+                2,
+            )
+            if not times.empty
             else None
         ),
 
-        "total_com_tempo": int(times.size),
-        "percentual_ocr": percentual_ocr,
-        "total_ocr": quantidade_ocr,
+        "tempo_mediano": (
+            round(
+                float(np.median(times)),
+                2,
+            )
+            if not times.empty
+            else None
+        ),
+
+        "tempo_desvio_padrao": (
+            round(
+                float(
+                    np.std(
+                        times,
+                        ddof=1,
+                    )
+                ),
+                2,
+            )
+            if len(times) > 1
+            else 0.0
+        ),
+
+        "categoria_maior_volume": (
+            categoria_maior_volume
+        ),
+
+        "categoria_maior_tempo_medio": (
+            categoria_maior_tempo
+        ),
+
+        "tempo_medio_por_categoria": (
+            tempos_categoria
+        ),
+
+        "percentual_paginas_ocr": (
+            percentual_paginas_ocr
+        ),
+
+        "erros_por_tipo": (
+            erros_por_tipo
+        ),
+
+        "erros_por_etapa": (
+            erros_por_etapa
+        ),
     }
 
 
@@ -170,26 +338,43 @@ def export_results(
     output_dir: str | Path,
     csv_name: str,
     json_name: str,
+    total_documentos: int | None = None,
+    total_paginas: int | None = None,
+    paginas_ocr: int | None = None,
+    erros: pd.DataFrame | None = None,
 ) -> dict:
-    """Exporta os registros para CSV e os indicadores para JSON."""
-    output = Path(output_dir)
-    output.mkdir(
+    """Exporta os dados tratados e os indicadores."""
+
+    out = Path(output_dir)
+
+    out.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    indicators = build_indicators(df)
+    indicators = build_indicators(
+        df,
+        total_documentos=total_documentos,
+        total_paginas=total_paginas,
+        paginas_ocr=paginas_ocr,
+        erros=erros,
+    )
 
-    csv_path = output / csv_name
-    json_path = output / json_name
+    # ---------------------------------------------------------
+    # CSV
+    # ---------------------------------------------------------
 
     df.to_csv(
-        csv_path,
+        out / csv_name,
         index=False,
         encoding="utf-8",
     )
 
-    json_path.write_text(
+    # ---------------------------------------------------------
+    # JSON
+    # ---------------------------------------------------------
+
+    (out / json_name).write_text(
         json.dumps(
             indicators,
             ensure_ascii=False,
@@ -202,147 +387,191 @@ def export_results(
     return indicators
 
 
+def _save_bar_chart(
+    series: pd.Series,
+    title: str,
+    xlabel: str,
+    output: Path,
+    horizontal: bool = True,
+) -> None:
+    """Salva um gráfico de barras."""
+
+    if series.empty:
+        return
+
+    fig, ax = plt.subplots(
+        figsize=(9, 5)
+    )
+
+    if horizontal:
+
+        series.sort_values().plot.barh(
+            ax=ax
+        )
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("")
+
+    else:
+
+        series.plot.bar(
+            ax=ax
+        )
+
+        ax.set_ylabel(xlabel)
+        ax.set_xlabel("")
+
+    ax.set_title(title)
+
+    fig.tight_layout()
+
+    fig.savefig(
+        output,
+        dpi=160,
+    )
+
+    plt.close(fig)
+
+
 def generate_charts(
     df: pd.DataFrame,
     directory: str | Path,
 ) -> None:
-    """Gera os gráficos principais dos atendimentos."""
+    """Gera os gráficos obrigatórios do projeto."""
+
     path = Path(directory)
+
     path.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    if df.empty:
-        return
+    # ---------------------------------------------------------
+    # 1. Atendimentos por categoria
+    # ---------------------------------------------------------
 
-    # ---------------------------------------------------------
-    # Gráfico por categoria
-    # ---------------------------------------------------------
     if "categoria" in df.columns:
-        dados = (
+
+        categoria = (
             df["categoria"]
             .fillna("Sem informação")
-            .astype(str)
             .value_counts()
-            .sort_values()
         )
 
-        if not dados.empty:
-            ax = dados.plot.barh(
-                figsize=(9, 5),
-            )
-
-            ax.set_title(
-                "Atendimentos por categoria"
-            )
-            ax.set_xlabel("Quantidade")
-            ax.set_ylabel("")
-
-            plt.tight_layout()
-            plt.savefig(
-                path / "atendimentos_categoria.png",
-                dpi=160,
-            )
-            plt.close()
+        _save_bar_chart(
+            categoria,
+            "Atendimentos por categoria",
+            "Quantidade",
+            path / "atendimentos_categoria.png",
+        )
 
     # ---------------------------------------------------------
-    # Gráfico por status
+    # 2. Atendimentos por status
     # ---------------------------------------------------------
+
     if "status" in df.columns:
-        dados = (
+
+        status = (
             df["status"]
             .fillna("Sem informação")
-            .astype(str)
             .value_counts()
-            .sort_values()
         )
 
-        if not dados.empty:
-            ax = dados.plot.barh(
-                figsize=(9, 5),
-            )
-
-            ax.set_title(
-                "Atendimentos por status"
-            )
-            ax.set_xlabel("Quantidade")
-            ax.set_ylabel("")
-
-            plt.tight_layout()
-            plt.savefig(
-                path / "atendimentos_status.png",
-                dpi=160,
-            )
-            plt.close()
+        _save_bar_chart(
+            status,
+            "Atendimentos por status",
+            "Quantidade",
+            path / "atendimentos_status.png",
+        )
 
     # ---------------------------------------------------------
-    # Tempo médio por categoria
+    # 3. Tempo médio por categoria
     # ---------------------------------------------------------
-    if (
-        "categoria" in df.columns
-        and "tempo_minutos" in df.columns
-    ):
-        dados = df.copy()
 
-        dados["tempo"] = pd.to_numeric(
-            dados["tempo_minutos"],
+    if {
+        "categoria",
+        "tempo_minutos",
+    }.issubset(df.columns):
+
+        temp_df = df.copy()
+
+        temp_df["tempo_minutos"] = pd.to_numeric(
+            temp_df["tempo_minutos"],
             errors="coerce",
         )
 
         tempo_categoria = (
-            dados
-            .dropna(subset=["tempo"])
-            .groupby("categoria")["tempo"]
+            temp_df
+            .dropna(
+                subset=["tempo_minutos"]
+            )
+            .groupby("categoria")[
+                "tempo_minutos"
+            ]
             .mean()
-            .dropna()
             .sort_values()
         )
 
-        if not tempo_categoria.empty:
-            ax = tempo_categoria.plot.barh(
-                figsize=(9, 5),
-            )
-
-            ax.set_title(
-                "Tempo médio por categoria"
-            )
-            ax.set_xlabel("Minutos")
-            ax.set_ylabel("")
-
-            plt.tight_layout()
-            plt.savefig(
-                path / "tempo_medio_categoria.png",
-                dpi=160,
-            )
-            plt.close()
+        _save_bar_chart(
+            tempo_categoria,
+            "Tempo médio por categoria",
+            "Minutos",
+            path / "tempo_medio_categoria.png",
+        )
 
     # ---------------------------------------------------------
-    # Gráfico por método de extração
+    # 4. Atendimentos por método de extração
     # ---------------------------------------------------------
+
     if "metodo" in df.columns:
-        dados = (
+
+        metodo = (
             df["metodo"]
             .fillna("Sem informação")
-            .astype(str)
             .value_counts()
-            .sort_values()
         )
 
-        if not dados.empty:
-            ax = dados.plot.barh(
-                figsize=(9, 5),
-            )
+        _save_bar_chart(
+            metodo,
+            "Atendimentos por método de extração",
+            "Quantidade",
+            path / "atendimentos_metodo.png",
+        )
 
-            ax.set_title(
-                "Atendimentos por método de extração"
-            )
-            ax.set_xlabel("Quantidade")
-            ax.set_ylabel("")
+    # ---------------------------------------------------------
+    # 5. Atendimentos por município
+    # ---------------------------------------------------------
 
-            plt.tight_layout()
-            plt.savefig(
-                path / "atendimentos_metodo.png",
-                dpi=160,
-            )
-            plt.close()
+    if "municipio" in df.columns:
+
+        municipio = (
+            df["municipio"]
+            .fillna("Sem informação")
+            .value_counts()
+        )
+
+        _save_bar_chart(
+            municipio,
+            "Atendimentos por município",
+            "Quantidade",
+            path / "atendimentos_municipio.png",
+        )
+
+    # ---------------------------------------------------------
+    # 6. Registros por classificação
+    # ---------------------------------------------------------
+
+    if "classificacao" in df.columns:
+
+        classificacao = (
+            df["classificacao"]
+            .fillna("Sem informação")
+            .value_counts()
+        )
+
+        _save_bar_chart(
+            classificacao,
+            "Registros por classificação",
+            "Quantidade",
+            path / "registros_classificacao.png",
+        )
