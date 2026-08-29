@@ -1,85 +1,62 @@
-﻿"""Entrada de linha de comando."""
+"""Entrada de linha de comando para processamento, indexação e consulta."""
 from __future__ import annotations
 
 import argparse
 
 from .config import load_config
-from .pipeline import process_all
 from .indexer import build_index, semantic_query
+from .pipeline import process_all
 from .rag import answer
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Cria o parser dos argumentos da aplicação."""
+
     parser = argparse.ArgumentParser(
         description="Processa e consulta os atendimentos"
     )
-
     parser.add_argument(
         "--indexar",
         action="store_true",
-        help="Processa os PDFs e indexa os chunks no ChromaDB",
+        help="Cria/atualiza o índice vetorial após o processamento.",
     )
-
     parser.add_argument(
         "--pergunta",
-        help="Executa uma consulta semântica/RAG sem reprocessar os PDFs",
+        help="Executa uma consulta semântica após o processamento.",
     )
-
     parser.add_argument(
         "--top-k",
         type=int,
         default=5,
-        help="Quantidade de resultados recuperados (padrão: 5)",
+        help="Quantidade de fontes recuperadas na consulta.",
     )
-
     parser.add_argument(
-        "--reprocessar",
-        action="store_true",
-        help="Reprocessa os PDFs mesmo que já estejam registrados",
+        "--categoria",
+        help="Filtro opcional de categoria na consulta semântica.",
     )
+    return parser
 
-    args = parser.parse_args()
+
+def main() -> None:
+    """Executa o fluxo solicitado pela linha de comando."""
+
+    args = build_parser().parse_args()
     cfg = load_config()
 
-    # ---------------------------------------------------------
-    # MODO CONSULTA
-    # ---------------------------------------------------------
-    # Se foi informada uma pergunta, não precisamos processar
-    # novamente os PDFs. Os chunks já estão no ChromaDB.
-    if args.pergunta:
-        if args.top_k < 1:
-            parser.error("--top-k deve ser maior ou igual a 1")
+    dataframe = process_all(cfg)
+    print(f"Registros encontrados: {len(dataframe)}")
 
+    if args.indexar:
+        print(f"Chunks indexados: {build_index(cfg)}")
+
+    if args.pergunta:
         sources = semantic_query(
             cfg,
             args.pergunta,
             args.top_k,
+            args.categoria,
         )
-
-        resultado = answer(
-            args.pergunta,
-            sources,
-        )
-
-        print(resultado)
-        return
-
-    # ---------------------------------------------------------
-    # MODO PROCESSAMENTO
-    # ---------------------------------------------------------
-    df = process_all(
-        cfg,
-        reprocessar=args.reprocessar,
-    )
-
-    print(f"Registros encontrados: {len(df)}")
-
-    # ---------------------------------------------------------
-    # MODO INDEXAÇÃO
-    # ---------------------------------------------------------
-    if args.indexar:
-        quantidade = build_index(cfg)
-        print(f"Chunks indexados: {quantidade}")
+        print(answer(args.pergunta, sources))
 
 
 if __name__ == "__main__":
